@@ -1,0 +1,56 @@
+# Entorno virtual
+venv/
+ENV/
+env/
+.venv/
+
+# Archivos de configuración secreta
+.env
+.env.*
+
+# Caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de logs y bases de datos locales
+*.log
+*.sqlite3
+*.db
+
+# Configuración del editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de testing
+htmlcov/
+.tox/
+.nox/
+.coverage
+coverage.xml
+*.cover
+.pytest_cache/
+
+# Compilaciones
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# Archivos temporales
+*.bak
+*.swp
+*~
+
+# Archivos de Jupyter
+.ipynb_checkpoints/
+
+# Archivos creados por matplotlib u otros
+__results__/
