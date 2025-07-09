@@ -1,4 +1,4 @@
-# src/controllers/sensorIMX477_controller.py
+# --- src/controllers/sensorIMX477_controller.py ---
 import platform
 import cv2
 import numpy as np
@@ -6,13 +6,14 @@ import subprocess
 from datetime import datetime
 from odmantic import AIOEngine
 from src.models.sensorIMX477_model import SensorIMX477
+from src.rabbitmq.publisher import publish_data
+from config import ROUTING_KEY_IMX477
 
 def obtener_frame():
-    # Captura 1 frame usando libcamera, guarda en RAM
     subprocess.run([
-        "libcamera-still", "-n", "--output", "/dev/shm/frame.jpg", "-t", "100", "--width", "640", "--height", "480"
+        "libcamera-still", "-n", "--output", "/dev/shm/frame.jpg", "-t", "100",
+        "--width", "640", "--height", "480"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
     return cv2.imread("/dev/shm/frame.jpg")
 
 def calcular_luminosidad(img):
@@ -27,7 +28,6 @@ def calcular_nitidez(img):
 
 def detectar_laser(img):
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    # Define rango de color rojo intenso (ajustable según láser)
     rojo_bajo = np.array([0, 100, 100])
     rojo_alto = np.array([10, 255, 255])
     mascara = cv2.inRange(hsv, rojo_bajo, rojo_alto)
@@ -35,7 +35,6 @@ def detectar_laser(img):
     return len(contornos) > 0
 
 def calcular_score(lum, nit, laser):
-    # Normalizamos valores arbitrarios para puntuación
     lum_score = min(lum / 200, 1.0)
     nit_score = min(nit / 1000, 1.0)
     laser_score = 1.0 if laser else 0.0
@@ -68,4 +67,10 @@ async def analizar_frame(engine: AIOEngine, id_project: int = 1, resolution: str
     )
 
     await engine.save(datos)
+
+    try:
+        publish_data(datos, ROUTING_KEY_IMX477)
+    except Exception as e:
+        print("❌ Error al enviar a RabbitMQ:", e)
+
     return datos
