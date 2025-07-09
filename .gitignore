@@ -3,6 +3,7 @@ venv/
 ENV/
 env/
 .venv/
+.api_sensors/
 
 # Archivos de configuración secreta
 .env
