@@ -60,13 +60,8 @@ async def read_and_store(engine: AIOEngine):
         )
 
     await engine.save(sensor_data)
-    publish_data(sensor_data)
+    try:
+      publish_data(sensor_data)
+    except Exception as e:
+        print("🐇 Error al publicar en RabbitMQ:", e)
     return sensor_data
-
-
-#async def read_and_store(engine: AIOEngine):
- #   sensor_data = read_sensor()
- #   if sensor_data:
-   #     await engine.save(sensor_data)
-   #     publish_data(sensor_data)
-  #  return sensor_data
