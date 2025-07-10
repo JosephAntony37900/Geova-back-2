@@ -46,25 +46,28 @@ def read_sensor():
 
 
 # --- Guardar en MongoDB y enviar a RabbitMQ ---
-async def read_and_store(engine: AIOEngine):
+async def read_and_store(engine: AIOEngine, event: bool = False):
     sensor_raw = read_sensor()
 
-    # Si el sensor no respondió, no hacer nada
     if sensor_raw is None:
         print("⛔ No se obtuvo lectura válida del sensor.")
         return None
 
-    # Agrega manualmente el id del proyecto
     sensor_data = SensorTF(
         id_project=1,
-        **sensor_raw  # ← agrega todos los valores medidos
+        event=event,  # ← aplicar flag
+        **sensor_raw
     )
 
-    await engine.save(sensor_data)
-
+    # Publicar SIEMPRE
     try:
         publish_data(sensor_data, ROUTING_KEY_TF)
     except Exception as e:
         print("❌ Error al enviar a RabbitMQ:", e)
 
+    # Guardar solo si event=True
+    if event:
+        await engine.save(sensor_data)
+
     return sensor_data
+

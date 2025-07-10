@@ -8,4 +8,5 @@ class SensorTF(Model):
     distancia_m: float
     fuerza_senal: int
     temperatura: float
+    event: bool = False 
     timestamp: datetime = Field(default_factory=datetime.utcnow)

@@ -10,5 +10,6 @@ class SensorIMX477(Model):
     laser_detectado: bool         # si se captó el láser
     calidad_frame: float          # score general de calidad
     probabilidad_confiabilidad: float  # %
+    event: bool = False 
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     

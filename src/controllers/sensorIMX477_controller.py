@@ -40,7 +40,7 @@ def calcular_score(lum, nit, laser):
     laser_score = 1.0 if laser else 0.0
     return round((lum_score + nit_score + laser_score) / 3, 2)
 
-async def analizar_frame(engine: AIOEngine, id_project: int = 1, resolution: str = "640x480"):
+async def analizar_frame(engine: AIOEngine, id_project: int = 1, resolution: str = "640x480", event: bool = False):
     if platform.system() == "Windows":
         print("📵 No disponible en Windows.")
         return None
@@ -63,14 +63,19 @@ async def analizar_frame(engine: AIOEngine, id_project: int = 1, resolution: str
         nitidez_score=round(nit, 2),
         laser_detectado=laser,
         calidad_frame=calidad,
-        probabilidad_confiabilidad=probabilidad
+        probabilidad_confiabilidad=probabilidad,
+        event=event  # ← aplicar flag
     )
 
-    await engine.save(datos)
-
+    # Publicar SIEMPRE
     try:
         publish_data(datos, ROUTING_KEY_IMX477)
     except Exception as e:
         print("❌ Error al enviar a RabbitMQ:", e)
 
+    # Guardar solo si event=True
+    if event:
+        await engine.save(datos)
+
     return datos
+
