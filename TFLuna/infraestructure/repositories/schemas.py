@@ -1,0 +1,12 @@
+#TFLuna/infraestructure/repositories/schemas.py
+from odmantic import Model, Field
+from datetime import datetime
+
+class SensorTFDocument(Model):
+    id_project: int 
+    distancia_cm: int
+    distancia_m: float
+    fuerza_senal: int
+    temperatura: float
+    event: bool = False
+    timestamp: datetime = Field(default_factory=datetime.utcnow)

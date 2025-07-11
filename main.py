@@ -1,50 +1,55 @@
-# --- main.py ---
+# main.py
 from fastapi import FastAPI
-from config import engine
-import asyncio
-import uvicorn
+import uvicorn, asyncio
 
-from src.routes.sensorTF_routes import router as tf_router
-from src.routes.sensorIMX477_routes import router as imx477_router
-from src.routes.graph_routes import router as graph_router
-from src.routes.ws_routes import router as ws_router
-
-from src.controllers.sensorTF_controller import read_and_store
-from src.controllers.sensorIMX477_controller import analizar_frame
-from src.websocket.ws_manager import manager as ws_manager  # 🚨 Nuevo import
+from core.config import get_engine, get_rabbitmq_config
+from TFLuna.infraestructure.dependencies import init_tf_dependencies
+from TFLuna.infraestructure.routes.routes_tf import router as tf_router
+from IMX477.infraestructure.dependencies import init_imx_dependencies
+from IMX477.infraestructure.routes.routes_imx import router as imx_router
+from Graph.infraestructure.routes.routes_graph import router as graph_router
+from Graph.infraestructure.dependencies import init_graph_dependencies
 
 app = FastAPI()
 
-@app.on_event("startup")
-async def tf_task():
-    while True:
-        try:
-            data = await read_and_store(engine)
-            if data:
-                await ws_manager.broadcast({"sensor": "TF-Luna", "data": data.dict()})
-        except Exception as e:
-            print("Error en TF-Luna:", e)
-        await asyncio.sleep(1)
+# Obtener configuración
+engine = get_engine()
+rabbitmq_config = get_rabbitmq_config()
 
+# Inyectar dependencias
+init_tf_dependencies(app, engine, rabbitmq_config)
+init_imx_dependencies(app, engine, rabbitmq_config)
+init_graph_dependencies(app, engine)
+
+@app.on_event("startup")
+async def start_tasks():
+    async def tf_task():
+        while True:
+            try:
+                controller = app.state.tf_controller
+                data = await controller.get_tf_data(event=False)
+                print("TF-Luna leído:", data.dict() if data else "Sin datos")
+            except Exception as e:
+                print("❌ Error en TF-Luna:", e)
+            await asyncio.sleep(1)
 
     async def imx_task():
         while True:
             try:
-                data = await analizar_frame(engine)
-                if data:
-                    await ws_manager.broadcast({"sensor": "IMX477", "data": data.dict()})
+                controller = app.state.imx_controller
+                data = await controller.get_imx_data(event=False)
+                print("IMX477 leído:", data.dict() if data else "Sin datos")
             except Exception as e:
-                print("Error en IMX477:", e)
+                print("❌ Error en IMX477:", e)
             await asyncio.sleep(3)
 
     asyncio.create_task(tf_task())
     asyncio.create_task(imx_task())
 
-# Registrar rutas HTTP y WebSocket
+# Rutas
 app.include_router(tf_router)
-app.include_router(imx477_router)
+app.include_router(imx_router)
 app.include_router(graph_router)
-app.include_router(ws_router)  # 🔌 WebSocket
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
