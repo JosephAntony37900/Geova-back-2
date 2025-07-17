@@ -18,5 +18,6 @@ def get_rabbitmq_config():
         "user": os.getenv("RABBITMQ_USER"),
         "pass": os.getenv("RABBITMQ_PASS"),
         "routing_key": os.getenv("ROUTING_KEY_TF"),
-        "routing_key_imx": os.getenv("ROUTING_KEY_IMX477")
+        "routing_key_imx": os.getenv("ROUTING_KEY_IMX477"),
+        "routing_key_mpu": os.getenv("ROUTING_KEY_MPU6050"),
     }

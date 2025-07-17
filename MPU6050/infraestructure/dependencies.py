@@ -15,7 +15,7 @@ def init_mpu_dependencies(app: FastAPI, engine: AIOEngine, rabbitmq_config: dict
         host=rabbitmq_config["host"],
         user=rabbitmq_config["user"],
         password=rabbitmq_config["pass"],
-        routing_key=rabbitmq_config["routing_key"]
+        routing_key=rabbitmq_config["routing_key_mpu"]
     )
 
     usecase = MPUUseCase(reader, repository, publisher)

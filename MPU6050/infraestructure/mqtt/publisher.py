@@ -14,10 +14,17 @@ class RabbitMQMPUPublisher(MPUPublisher):
         credentials = pika.PlainCredentials(self.user, self.password)
         conn = pika.BlockingConnection(pika.ConnectionParameters(self.host, credentials=credentials))
         ch = conn.channel()
+
+        # Declarar exchange
         ch.exchange_declare(exchange="mpu.topic", exchange_type="topic", durable=True)
 
+        # Asegurar cola y binding
+        ch.queue_declare(queue=self.routing_key, durable=True)
+        ch.queue_bind(exchange="mpu.topic", queue=self.routing_key, routing_key=self.routing_key)
+
+        # Publicar mensaje
         message = json.dumps(sensor.dict(), default=str)
         ch.basic_publish(exchange="mpu.topic", routing_key=self.routing_key, body=message)
 
-        print(f"MPU6050 publicado: {message}")
+        print(f"📤 MPU6050 publicado: {message}")
         conn.close()
