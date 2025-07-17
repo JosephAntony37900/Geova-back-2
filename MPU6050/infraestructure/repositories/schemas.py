@@ -10,5 +10,8 @@ class SensorMPUDocument(Model):
     gx: float
     gy: float
     gz: float
+    roll: float
+    pitch: float
+    apertura: float
     event: bool = False
     timestamp: datetime = Field(default_factory=datetime.utcnow)

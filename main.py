@@ -63,7 +63,7 @@ async def start_tasks():
                 print("MPU6050 leído:", data.dict() if data else "Sin datos")
             except Exception as e:
                 print("❌ Error en MPU6050:", e)
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
 
     asyncio.create_task(tf_task())
     asyncio.create_task(imx_task())

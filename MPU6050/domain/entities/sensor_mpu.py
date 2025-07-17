@@ -10,5 +10,9 @@ class SensorMPU(BaseModel):
     gx: float
     gy: float
     gz: float
+    roll: float
+    pitch: float
+    apertura: float
     event: bool = False
     timestamp: datetime = datetime.utcnow()
+
