@@ -3,7 +3,7 @@ import serial
 import platform
 
 class TFSerialReader:
-    def __init__(self, port="/dev/serial10", baudrate=115200):
+    def __init__(self, port="/dev/ttyAMA0", baudrate=115200):
         if platform.system() != "Windows":
             self.ser = serial.Serial(port, baudrate, timeout=0)
         else:

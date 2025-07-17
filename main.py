@@ -30,7 +30,9 @@ async def start_tasks():
                 data = await controller.get_tf_data(event=False)
                 print("TF-Luna leído:", data.dict() if data else "Sin datos")
             except Exception as e:
-                print("❌ Error en TF-Luna:", e)
+                import traceback
+                print("❌ Error en TF-Luna:")
+                traceback.print_exc()
             await asyncio.sleep(1)
 
     async def imx_task():
@@ -40,7 +42,9 @@ async def start_tasks():
                 data = await controller.get_imx_data(event=False)
                 print("IMX477 leído:", data.dict() if data else "Sin datos")
             except Exception as e:
-                print("❌ Error en IMX477:", e)
+                import traceback
+                print("❌ Error en IMX477:")
+                traceback.print_exc()
             await asyncio.sleep(3)
 
     asyncio.create_task(tf_task())

@@ -12,7 +12,7 @@ def init_imx_dependencies(app, engine, rabbitmq_config):
         host=rabbitmq_config["host"],
         user=rabbitmq_config["user"],
         password=rabbitmq_config["pass"],
-        routing_key=rabbitmq_config["routing_key"]
+        routing_key=rabbitmq_config["routing_key_imx"]
     )
 
     usecase = IMXUseCase(reader, repository, publisher)
