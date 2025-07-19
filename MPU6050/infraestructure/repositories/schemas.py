@@ -14,4 +14,5 @@ class SensorMPUDocument(Model):
     pitch: float
     apertura: float
     event: bool = False
+    synced: False
     timestamp: datetime = Field(default_factory=datetime.utcnow)

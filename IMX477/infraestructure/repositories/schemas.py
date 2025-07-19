@@ -10,4 +10,5 @@ class SensorIMXDocument(Model):
     calidad_frame: float
     probabilidad_confiabilidad: float
     event: bool = False
+    synced: bool = False
     timestamp: datetime = Field(default_factory=datetime.utcnow)

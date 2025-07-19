@@ -9,5 +9,5 @@ class TFLunaRepositoryMongo(TFLunaRepository):
         self.engine = engine
         
     async def save(self, sensor_data: SensorTF):
-        document = SensorTFDocument(**sensor_data.dict())
+        document = SensorTFDocument(**sensor_data.dict(), synced = False)
         await self.engine.save(document)

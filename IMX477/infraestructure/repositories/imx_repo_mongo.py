@@ -8,5 +8,5 @@ class IMXRepositoryMongo(IMXRepository):
         self.engine = engine
 
     async def save(self, sensor_data: SensorIMX477):
-        doc = SensorIMXDocument(**sensor_data.dict())
+        doc = SensorIMXDocument(**sensor_data.dict(), synced=False)
         await self.engine.save(doc)

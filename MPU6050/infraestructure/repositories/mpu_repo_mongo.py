@@ -9,5 +9,5 @@ class MPURepositoryMongo(MPURepository):
         self.engine = engine
 
     async def save(self, data: SensorMPU):
-        document = SensorMPUDocument(**data.dict())
+        document = SensorMPUDocument(**data.dict(), synced=False)
         await self.engine.save(document)

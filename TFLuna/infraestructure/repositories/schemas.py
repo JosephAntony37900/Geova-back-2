@@ -1,5 +1,6 @@
 #TFLuna/infraestructure/repositories/schemas.py
 from odmantic import Model, Field
+from typing import Optional
 from datetime import datetime
 
 class SensorTFDocument(Model):
@@ -9,4 +10,5 @@ class SensorTFDocument(Model):
     fuerza_senal: int
     temperatura: float
     event: bool = False
+    synced: Optional[bool] = Field(default=False)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
