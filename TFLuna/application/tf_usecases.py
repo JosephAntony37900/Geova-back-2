@@ -1,5 +1,5 @@
 #TFLuna/application/tf_usecase.py
-from TFLuna.domain.entities.sensor_tf import SensorTF
+from TFLuna.domain.entities.sensor_tf import SensorTFLuna as SensorTF
 from TFLuna.domain.repositories.tf_repository import TFLunaRepository
 from TFLuna.domain.ports.mqtt_publisher import MQTTPublisher
 
@@ -9,7 +9,7 @@ class TFUseCase:
         self.repository = repository
         self.publisher = publisher
 
-    async def execute(self, project_id=1, event=False):
+    async def execute(self, project_id=1, event=True):
         raw = self.reader.read()
         if not raw:
             return None

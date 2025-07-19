@@ -2,11 +2,11 @@
 from datetime import datetime
 from pydantic import BaseModel
 
-class SensorTF(BaseModel):
+class SensorTFLuna(BaseModel):
     id_project: int
     distancia_cm: int
     distancia_m: float
     fuerza_senal: int
     temperatura: float
-    event: bool = False
+    event: bool = True
     timestamp: datetime = datetime.utcnow()

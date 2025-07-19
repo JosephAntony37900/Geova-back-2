@@ -42,7 +42,7 @@ async def start_tasks():
         while True:
             try:
                 controller = app.state.tf_controller
-                data = await controller.get_tf_data(event=False)
+                data = await controller.get_tf_data(event=True)
                 print("TF-Luna leído:", data.dict() if data else "Sin datos")
             except Exception as e:
                 import traceback

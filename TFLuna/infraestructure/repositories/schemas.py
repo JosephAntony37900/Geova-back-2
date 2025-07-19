@@ -3,12 +3,12 @@ from odmantic import Model, Field
 from typing import Optional
 from datetime import datetime
 
-class SensorTFDocument(Model):
+class SensorTF(Model):
     id_project: int 
     distancia_cm: int
     distancia_m: float
     fuerza_senal: int
     temperatura: float
-    event: bool = False
+    event: bool = True
     synced: Optional[bool] = Field(default=False)
     timestamp: datetime = Field(default_factory=datetime.utcnow)

@@ -1,6 +1,6 @@
 # TFLuna/infraestructure/mqtt/publisher.py
 from TFLuna.domain.ports.mqtt_publisher import MQTTPublisher
-from TFLuna.domain.entities.sensor_tf import SensorTF
+from TFLuna.domain.entities.sensor_tf import SensorTFLuna as SensorTF
 import pika, json
 
 class RabbitMQPublisher(MQTTPublisher):

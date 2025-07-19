@@ -5,5 +5,5 @@ class TFController:
     def __init__(self, usecase: TFUseCase):
         self.usecase = usecase
 
-    async def get_tf_data(self, event: bool = False):
+    async def get_tf_data(self, event: bool = True):
         return await self.usecase.execute(event=event)
