@@ -2,7 +2,7 @@
 from odmantic import Model, Field
 from datetime import datetime
 
-class HCSensorDoc(Model):
+class SensorHCSR04(Model):
     id_project: int
     distancia_cm: float
     event: bool = True

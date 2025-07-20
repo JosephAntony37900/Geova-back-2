@@ -1,20 +1,21 @@
 # HCSR04/infraestructure/ble/hc_ble_reader.py
 import asyncio
 from bleak import BleakClient
+from HCSR04.domain.ports.ble_reader import BLEReader
 
-class BLEHCReader:
+class HCBLEReader(BLEReader):
     def __init__(self, address, char_uuid):
         self.address = address
         self.char_uuid = char_uuid
 
-    def read(self):
-        """Lectura síncrona simulada desde BLE"""
+    def read(self) -> dict:
+        """Lectura síncrona desde BLE"""
         data = asyncio.run(self._read_ble())
         if data:
             return {"distancia_cm": float(data)}
         return None
 
-    async def _read_ble(self):
+    async def _read_ble(self) -> str | None:
         try:
             async with BleakClient(self.address) as client:
                 if await client.is_connected():

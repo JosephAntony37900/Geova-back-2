@@ -41,6 +41,7 @@ init_tf_dependencies(app, engine, rabbitmq_config)
 init_imx_dependencies(app, engine, rabbitmq_config)
 init_graph_dependencies(app, engine)
 init_mpu_dependencies(app, engine, rabbitmq_config)
+init_hc_dependencies(app, engine, rabbitmq_config)
 
 @app.on_event("startup")
 async def start_tasks():

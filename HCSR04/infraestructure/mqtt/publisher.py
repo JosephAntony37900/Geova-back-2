@@ -4,7 +4,7 @@ import pika
 import json
 from pika.exceptions import AMQPConnectionError
 
-class RabbitMQPublisher(MQTTPublisher):
+class MQTTPublisherHC(MQTTPublisher):
     def __init__(self, host: str, user: str, password: str, routing_key: str):
         self.host = host
         self.user = user

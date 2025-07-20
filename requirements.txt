@@ -2,6 +2,7 @@ aio-pika==9.5.5
 aiormq==6.8.1
 annotated-types==0.7.0
 anyio==4.9.0
+bleak==0.20.0
 click==8.2.1
 colorama==0.4.6
 dnspython==2.7.0
@@ -32,5 +33,12 @@ typing_extensions==4.14.1
 uvicorn==0.35.0
 watchfiles==1.1.0
 websockets==15.0.1
+winrt-runtime==3.2.1
+winrt-Windows.Devices.Bluetooth==3.2.1
+winrt-Windows.Devices.Bluetooth.Advertisement==3.2.1
+winrt-Windows.Devices.Bluetooth.GenericAttributeProfile==3.2.1
+winrt-Windows.Devices.Enumeration==3.2.1
+winrt-Windows.Foundation==3.2.1
+winrt-Windows.Foundation.Collections==3.2.1
+winrt-Windows.Storage.Streams==3.2.1
 yarl==1.20.1
-bleak==0.20.0
