@@ -1,3 +1,4 @@
+#core/config.py
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from odmantic import AIOEngine
