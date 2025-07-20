@@ -1,3 +1,4 @@
+#TFLuna/infraestructure/sync/sync_service.py
 import asyncio
 from TFLuna.infraestructure.repositories.schemas import SensorTF
 from core.connectivity import is_connected
@@ -6,6 +7,7 @@ async def sync_tf_pending_data(local_engine, remote_engine):
     while True:
         if is_connected():
             unsynced = await local_engine.find(SensorTF, SensorTF.synced == False)
+            print(f"🕒 Pendientes: {len(unsynced)}")
             for doc in unsynced:
                 try:
                     await remote_engine.save(doc)

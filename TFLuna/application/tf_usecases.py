@@ -4,10 +4,11 @@ from TFLuna.domain.repositories.tf_repository import TFLunaRepository
 from TFLuna.domain.ports.mqtt_publisher import MQTTPublisher
 
 class TFUseCase:
-    def __init__(self, reader, repository: TFLunaRepository, publisher: MQTTPublisher):
+    def __init__(self, reader, repository: TFLunaRepository, publisher: MQTTPublisher, is_connected):
         self.reader = reader
         self.repository = repository
         self.publisher = publisher
+        self.is_connected = is_connected
 
     async def execute(self, project_id=1, event=True):
         raw = self.reader.read()
@@ -19,7 +20,7 @@ class TFUseCase:
         self.publisher.publish(data)
 
         if event:
-            await self.repository.save(data)
+            await self.repository.save(data, self.is_connected())
 
         return data
 
@@ -27,14 +28,13 @@ class TFUseCase:
         if not data.event:
             return {"msg": "No se almacenó porque `event` es False"}
 
-        exists = await self.repository.exists_by_project(data.id_project)
+        exists = await self.repository.exists_by_project(data.id_project, self.is_connected())
         if exists:
             return {"msg": f"Ya existe una medición para el proyecto {data.id_project}"}
 
         self.publisher.publish(data)
-        await self.repository.save(data)
+        await self.repository.save(data, self.is_connected())
         return {"msg": "Datos guardados correctamente"}
-    
-    async def get_by_project_id(self, project_id: int) -> SensorTF | None:
-        return await self.repository.get_by_project_id(project_id)
 
+    async def get_by_project_id(self, project_id: int) -> SensorTF | None:
+        return await self.repository.get_by_project_id(project_id, self.is_connected())
