@@ -5,19 +5,19 @@ from TFLuna.domain.entities.sensor_tf import SensorTFLuna as SensorTF
 
 router = APIRouter()
 
-@router.get("/sensor")
+@router.get("/tfluna/sensor")
 async def get_sensor(request: Request, event: bool = True):
     controller = request.app.state.tf_controller
     data = await controller.get_tf_data(event=event)
     return data.dict() if data else {"error": "No data"}
 
-@router.post("/sensor")
+@router.post("/tfluna/sensor")
 async def post_sensor(request: Request, payload: SensorTF):
     controller = request.app.state.tf_controller
     result = await controller.create_sensor(payload)
     return JSONResponse(content=result)
 
-@router.get("/sensor/{project_id}")
+@router.get("/tfluna/sensor/{project_id}")
 async def get_sensor_by_project_id(request: Request, project_id: int):
     controller = request.app.state.tf_controller
     data = await controller.get_by_project_id(project_id)

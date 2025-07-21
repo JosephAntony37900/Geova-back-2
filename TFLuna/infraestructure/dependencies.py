@@ -1,21 +1,27 @@
-# TFLuna/infraestructure/dependencies.py
 from fastapi import FastAPI
-from odmantic import AIOEngine
 from TFLuna.infraestructure.serial.tf_serial_reader import TFSerialReader
 from TFLuna.infraestructure.mqtt.publisher import RabbitMQPublisher
 from TFLuna.application.tf_usecases import TFUseCase
 from TFLuna.infraestructure.controllers.controller_tf import TFController
-from TFLuna.infraestructure.repositories.tf_repo_dual import TFLunaDualRepository
+from TFLuna.infraestructure.repositories.tf_repo_dual import DualTFLunaRepository
+import aiohttp
+
+async def is_connected() -> bool:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://www.google.com", timeout=2) as response:
+                return response.status == 200
+    except Exception:
+        return False
 
 def init_tf_dependencies(
     app: FastAPI,
-    local_engine: AIOEngine,
-    remote_engine: AIOEngine,
-    rabbitmq_config: dict,
-    is_connected_fn
+    session_local_factory,
+    session_remote_factory,
+    rabbitmq_config: dict
 ):
     reader = TFSerialReader()
-    repository = TFLunaDualRepository(local_engine, remote_engine)
+    repository = DualTFLunaRepository(session_local_factory, session_remote_factory)
     publisher = RabbitMQPublisher(
         host=rabbitmq_config["host"],
         user=rabbitmq_config["user"],
@@ -23,6 +29,6 @@ def init_tf_dependencies(
         routing_key=rabbitmq_config["routing_key"]
     )
 
-    usecase = TFUseCase(reader, repository, publisher, is_connected_fn)
+    usecase = TFUseCase(reader, repository, publisher, is_connected)
     controller = TFController(usecase)
     app.state.tf_controller = controller

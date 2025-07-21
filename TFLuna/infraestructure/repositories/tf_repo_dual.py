@@ -1,50 +1,41 @@
-#TFLuna/infraestructure/repositories/tf_repo_dual.py
-from odmantic import AIOEngine
-from TFLuna.domain.entities.sensor_tf import SensorTFLuna
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, insert
 from TFLuna.domain.repositories.tf_repository import TFLunaRepository
-from TFLuna.infraestructure.repositories.schemas import SensorTF as SensorTFModel
+from TFLuna.domain.entities.sensor_tf import SensorTFLuna
+from TFLuna.infraestructure.repositories.schemas_sqlalchemy import SensorTFModel
+from datetime import datetime
+import uuid
 
-class TFLunaDualRepository(TFLunaRepository):
-    def __init__(self, local_engine: AIOEngine, remote_engine: AIOEngine):
-        self.local_engine = local_engine
-        self.remote_engine = remote_engine
-        print("remote engine", remote_engine)
-        print("local engine", local_engine)
+class DualTFLunaRepository(TFLunaRepository):
+    def __init__(self, session_local_factory, session_remote_factory):
+        self.local_factory = session_local_factory
+        self.remote_factory = session_remote_factory
 
     async def save(self, sensor_data: SensorTFLuna, online: bool):
-        model = SensorTFModel(**sensor_data.dict(), synced=False)
-        await self.local_engine.save(model)
+        async with self.local_factory() as session_local:
+            local_model = SensorTFModel(**sensor_data.dict(), synced=online)
+            session_local.add(local_model)
+            await session_local.commit()
 
         if online:
-            try:
-                await self.remote_engine.save(model)
-                model.synced = True
-                await self.local_engine.save(model)
-                print("✅ Guardado en remoto")
-            except Exception as e:
-                print(f"❌ Error al guardar en remoto: {e}")
-        else:
-            print("📡 Sin internet, solo local")
+            async with self.remote_factory() as session_remote:
+                remote_model = SensorTFModel(**sensor_data.dict(), synced=True)
+                session_remote.add(remote_model)
+                await session_remote.commit()
 
     async def exists_by_project(self, project_id: int, online: bool) -> bool:
-        if online:
-            try:
-                doc = await self.remote_engine.find_one(SensorTFModel, SensorTFModel.id_project == project_id)
-                return doc is not None
-            except:
-                pass
-        doc = await self.local_engine.find_one(SensorTFModel, SensorTFModel.id_project == project_id)
-        return doc is not None
+        factory = self.remote_factory if online else self.local_factory
+        async with factory() as session:
+            stmt = select(SensorTFModel).where(SensorTFModel.id_project == project_id)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none() is not None
 
     async def get_by_project_id(self, project_id: int, online: bool) -> SensorTFLuna | None:
-        if online:
-            try:
-                doc = await self.remote_engine.find_one(SensorTFModel, SensorTFModel.id_project == project_id)
-                if doc:
-                    return SensorTFLuna(**doc.dict())
-            except:
-                pass
-        doc = await self.local_engine.find_one(SensorTFModel, SensorTFModel.id_project == project_id)
-        if doc:
-            return SensorTFLuna(**doc.dict())
-        return None
+        factory = self.remote_factory if online else self.local_factory
+        async with factory() as session:
+            stmt = select(SensorTFModel).where(SensorTFModel.id_project == project_id)
+            result = await session.execute(stmt)
+            record = result.scalar_one_or_none()
+            if record:
+                return SensorTFLuna(**record.as_dict())
+            return None

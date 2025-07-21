@@ -1,6 +1,6 @@
 # TFLuna/infraestructure/repositories/tf_repo_mongo.py
 from odmantic import AIOEngine
-from TFLuna.infraestructure.repositories.schemas import SensorTF as SensorTFModel
+from TFLuna.infraestructure.repositories.schemas_sqlalchemy import SensorTF as SensorTFModel
 from TFLuna.domain.entities.sensor_tf import SensorTFLuna
 from TFLuna.domain.repositories.tf_repository import TFLunaRepository
 
