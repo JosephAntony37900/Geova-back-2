@@ -9,13 +9,22 @@ from TFLuna.infraestructure.repositories.tf_repo_dual import TFLunaDualRepositor
 
 def init_tf_dependencies(
     app: FastAPI,
-    local_engine: AIOEngine,
-    remote_engine: AIOEngine,
+    local_engine: AIOEngine,      # <-- RECIBIR ENGINE LOCAL ESPECÍFICO
+    remote_engine: AIOEngine,     # <-- RECIBIR ENGINE REMOTO ESPECÍFICO  
     rabbitmq_config: dict,
     is_connected_fn
 ):
+    print("🔧 Inicializando TF-Luna con engines duales...")
+    print(f"   Local engine: {type(local_engine)}")
+    print(f"   Remote engine: {type(remote_engine)}")
+    
     reader = TFSerialReader()
-    repository = TFLunaDualRepository(local_engine, remote_engine)
+    
+    repository = TFLunaDualRepository(
+        local_engine=local_engine,
+        remote_engine=remote_engine
+    )
+    
     publisher = RabbitMQPublisher(
         host=rabbitmq_config["host"],
         user=rabbitmq_config["user"],
@@ -26,3 +35,5 @@ def init_tf_dependencies(
     usecase = TFUseCase(reader, repository, publisher, is_connected_fn)
     controller = TFController(usecase)
     app.state.tf_controller = controller
+    
+    print("✅ TF-Luna inicializado con repositorio dual")
