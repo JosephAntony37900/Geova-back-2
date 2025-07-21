@@ -9,7 +9,7 @@ class IMXUseCase:
         self.publisher = publisher
         self.is_connected = is_connected
 
-    async def execute(self, project_id=1, resolution="640x480", event=True):
+    async def execute(self, project_id=1, resolution="640x480", event=False):
         raw = self.reader.read()
         if not raw:
             return None

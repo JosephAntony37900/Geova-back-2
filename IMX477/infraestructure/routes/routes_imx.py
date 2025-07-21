@@ -5,7 +5,7 @@ from IMX477.domain.entities.sensor_imx import SensorIMX477
 router = APIRouter()
 
 @router.get("/imx477/sensor")
-async def get_sensor(request: Request, event: bool = True):
+async def get_sensor(request: Request, event: bool = False):
     controller = request.app.state.imx_controller
     data = await controller.get_imx_data(event=event)
     return data.dict() if data else {"error": "No data"}

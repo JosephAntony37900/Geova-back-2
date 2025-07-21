@@ -5,7 +5,7 @@ class IMXController:
     def __init__(self, usecase: IMXUseCase):
         self.usecase = usecase
 
-    async def get_imx_data(self, event: bool = True):
+    async def get_imx_data(self, event: bool = False):
         return await self.usecase.execute(event=event)
 
     async def create_sensor(self, data: SensorIMX477):
