@@ -1,3 +1,4 @@
+#IMX477/infraestructure/dependencies.py
 from IMX477.application.sensor_imx import IMXUseCase
 from IMX477.infraestructure.controllers.controller_imx import IMXController
 from IMX477.infraestructure.camera.imx_reader import IMXReader

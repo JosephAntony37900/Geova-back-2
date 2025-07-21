@@ -1,3 +1,4 @@
+#IMX477/infraestructure/controllers/controller_imx.py
 from IMX477.application.sensor_imx import IMXUseCase
 
 class IMXController:

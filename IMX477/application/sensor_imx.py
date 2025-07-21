@@ -1,3 +1,4 @@
+#IMX477/application/sensor_imx.py
 from IMX477.domain.entities.sensor_imx import SensorIMX477
 from IMX477.domain.repositories.imx_repository import IMXRepository
 from IMX477.domain.ports.mqtt_publisher import MQTTPublisher
