@@ -4,7 +4,7 @@ import pika
 import json
 from pika.exceptions import AMQPConnectionError
 
-class MQTTPublisherHC(MQTTPublisher):
+class RabbitMQPublisher(MQTTPublisher):
     def __init__(self, host: str, user: str, password: str, routing_key: str):
         self.host = host
         self.user = user
@@ -14,22 +14,18 @@ class MQTTPublisherHC(MQTTPublisher):
     def publish(self, sensor: HCSensorData):
         try:
             credentials = pika.PlainCredentials(self.user, self.password)
-            connection = pika.BlockingConnection(pika.ConnectionParameters(self.host, credentials=credentials))
-            channel = connection.channel()
+            conn = pika.BlockingConnection(pika.ConnectionParameters(self.host, credentials=credentials))
+            ch = conn.channel()
 
-            channel.exchange_declare(exchange="amq.topic", exchange_type="topic", durable=True)
+            # Asegurar exchange y publicar
+            ch.exchange_declare(exchange="amq.topic", exchange_type="topic", durable=True)
             message = json.dumps(sensor.dict(), default=str)
+            ch.basic_publish(exchange="amq.topic", routing_key=self.routing_key, body=message)
 
-            channel.basic_publish(
-                exchange="amq.topic",
-                routing_key=self.routing_key,
-                body=message
-            )
-
-            print(f"[MQTT-HC] Mensaje publicado: {message}")
-            connection.close()
+            print(f"[MQTT-HC] Mensaje enviado: {message}")
+            conn.close()
 
         except AMQPConnectionError:
-            print("[MQTT-HC] ❌ No se pudo conectar a RabbitMQ.")
+            print("[MQTT-HC] No hay conexión a RabbitMQ. Solo local.")
         except Exception as e:
-            print(f"[MQTT-HC] ⚠️ Error inesperado al publicar: {e}")
+            print(f"[MQTT-HC] Error inesperado al publicar: {e}")
