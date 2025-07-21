@@ -10,14 +10,22 @@ class TFUseCase:
         self.publisher = publisher
         self.is_connected = is_connected
 
-    async def execute(self, project_id=1, event=True):
+    async def execute(self, project_id=1, event=False):  # Cambiar event=False por defecto
+        """
+        Lee datos del sensor. 
+        - Si event=False: Solo retorna los datos para monitoreo (no persiste)
+        - Si event=True: Persiste en base de datos
+        """
         raw = self.reader.read()
         if not raw:
             return None
 
         data = SensorTF(id_project=project_id, event=event, **raw)
+        
+        # Siempre publico a MQTT para monitoreo
         self.publisher.publish(data)
 
+        # Solo guardo en BD si event=True (peticiones POST del frontend)
         if event:
             online = await self.is_connected()
             await self.repository.save(data, online)
@@ -25,8 +33,11 @@ class TFUseCase:
         return data
 
     async def create(self, data: SensorTF):
+        """
+        Método específico para crear mediciones desde el frontend
+        """
         if not data.event:
-            return {"msg": "No se almacenó porque `event` es False"}
+            return {"msg": "No se almacenó porque event es False"}
 
         online = await self.is_connected()
         exists = await self.repository.exists_by_project(data.id_project, online)

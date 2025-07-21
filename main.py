@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
         while True:
             try:
                 controller = app.state.tf_controller
-                data = await controller.get_tf_data(event=True)
+                data = await controller.get_tf_data(event=False)
                 print("📡 TF-Luna:", data.dict() if data else "Sin datos")
             except Exception as e:
                 import traceback

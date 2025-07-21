@@ -6,7 +6,7 @@ from TFLuna.domain.entities.sensor_tf import SensorTFLuna as SensorTF
 router = APIRouter()
 
 @router.get("/tfluna/sensor")
-async def get_sensor(request: Request, event: bool = True):
+async def get_sensor(request: Request, event: bool = False):
     controller = request.app.state.tf_controller
     data = await controller.get_tf_data(event=event)
     return data.dict() if data else {"error": "No data"}

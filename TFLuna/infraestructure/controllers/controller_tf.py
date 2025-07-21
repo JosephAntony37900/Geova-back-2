@@ -6,7 +6,7 @@ class TFController:
     def __init__(self, usecase: TFUseCase):
         self.usecase = usecase
 
-    async def get_tf_data(self, event: bool = True):
+    async def get_tf_data(self, event: bool = False):
         return await self.usecase.execute(event=event)
 
     async def create_sensor(self, data: SensorTF):
