@@ -1,8 +1,11 @@
 # MPU6050/infraestructure/routes/routes_mpu.py
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from MPU6050.domain.entities.sensor_mpu import SensorMPU
+from MPU6050.infraestructure.ws.ws_manager import WebSocketManager_MPU
 
+router_ws_mpu = APIRouter()
+ws_manager_mpu = WebSocketManager_MPU()
 router = APIRouter()
 
 @router.get("/mpu/sensor")
@@ -24,3 +27,12 @@ async def get_mpu_by_project_id(request: Request, project_id: int):
     if data:
         return data.dict()
     return JSONResponse(content={"error": "No se encontró medición para ese proyecto"}, status_code=404)
+
+@router_ws_mpu.websocket("/mpu/sensor/ws")
+async def mpu_ws(websocket: WebSocket):
+    await ws_manager_mpu.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # mantener la conexión viva
+    except WebSocketDisconnect:
+        ws_manager_mpu.disconnect(websocket)
