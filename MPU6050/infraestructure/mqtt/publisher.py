@@ -1,5 +1,5 @@
-# MPU6050/infraestructure/mqtt/publisher.py
 import pika, json
+from pika.exceptions import AMQPConnectionError
 from MPU6050.domain.ports.mpu_publisher import MPUPublisher
 from MPU6050.domain.entities.sensor_mpu import SensorMPU
 
@@ -11,20 +11,26 @@ class RabbitMQMPUPublisher(MPUPublisher):
         self.routing_key = routing_key
 
     def publish(self, sensor: SensorMPU):
-        credentials = pika.PlainCredentials(self.user, self.password)
-        conn = pika.BlockingConnection(pika.ConnectionParameters(self.host, credentials=credentials))
-        ch = conn.channel()
+        try:
+            credentials = pika.PlainCredentials(self.user, self.password)
+            conn = pika.BlockingConnection(pika.ConnectionParameters(self.host, credentials=credentials))
+            ch = conn.channel()
 
-        # Declarar exchange
-        ch.exchange_declare(exchange="mpu.topic", exchange_type="topic", durable=True)
+            # Declarar exchange
+            ch.exchange_declare(exchange="mpu.topic", exchange_type="topic", durable=True)
 
-        # Asegurar cola y binding
-        ch.queue_declare(queue=self.routing_key, durable=True)
-        ch.queue_bind(exchange="mpu.topic", queue=self.routing_key, routing_key=self.routing_key)
+            # Asegurar cola y binding
+            ch.queue_declare(queue=self.routing_key, durable=True)
+            ch.queue_bind(exchange="mpu.topic", queue=self.routing_key, routing_key=self.routing_key)
 
-        # Publicar mensaje
-        message = json.dumps(sensor.dict(), default=str)
-        ch.basic_publish(exchange="mpu.topic", routing_key=self.routing_key, body=message)
+            # Publicar mensaje
+            message = json.dumps(sensor.dict(), default=str)
+            ch.basic_publish(exchange="mpu.topic", routing_key=self.routing_key, body=message)
 
-        print(f"📤 MPU6050 publicado: {message}")
-        conn.close()
+            print(f"MPU6050 publicado: {message}")
+            conn.close()
+
+        except AMQPConnectionError:
+            print("[MQTT-MPU] No hay conexión a RabbitMQ (¿sin internet?). Solo local.")
+        except Exception as e:
+            print(f"[MQTT-MPU] Error inesperado al publicar: {e}")
