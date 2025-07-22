@@ -21,5 +21,5 @@ class WebSocketManager_MPU:
             try:
                 await conn.send_json(data)
             except Exception as e:
-                print("❌ Error enviando datos por WebSocket:", e)
+                print("Error enviando datos por WebSocket:", e)
 ws_manager_mpu = WebSocketManager_MPU()

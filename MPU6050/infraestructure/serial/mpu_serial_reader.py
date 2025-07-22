@@ -1,3 +1,4 @@
+#MPU6050/infraestructure/serial/mpu_serial_reader.py
 import time
 import math
 import platform
@@ -52,5 +53,5 @@ class MPUSerialReader:
             }
 
         except Exception as e:
-            print("❌ Error en MPU6050 al leer datos:", e)
+            print("Error en MPU6050 al leer datos:", e)
             return None

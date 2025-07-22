@@ -1,3 +1,4 @@
+# IMX477/infraestructure/repositories/schemas_sqlalchemy.py
 from sqlalchemy import Column, Integer, Float, Boolean, String, DateTime
 from sqlalchemy.orm import declarative_base
 from datetime import datetime

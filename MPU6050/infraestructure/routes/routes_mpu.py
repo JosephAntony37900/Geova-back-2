@@ -20,6 +20,26 @@ async def post_mpu_sensor(request: Request, payload: SensorMPU):
     result = await controller.create_sensor(payload)
     return JSONResponse(content=result)
 
+@router.put("/mpu/sensor/{project_id}")
+async def put_mpu_sensor(request: Request, project_id: int, payload: SensorMPU):
+    controller = request.app.state.mpu_controller
+    result = await controller.update_sensor(project_id, payload)
+    
+    if result.get("success", True):
+        return JSONResponse(content=result)
+    else:
+        return JSONResponse(content=result, status_code=404)
+
+@router.delete("/mpu/sensor/{project_id}")
+async def delete_mpu_sensor(request: Request, project_id: int):
+    controller = request.app.state.mpu_controller
+    result = await controller.delete_sensor(project_id)
+    
+    if result.get("success", True):
+        return JSONResponse(content=result)
+    else:
+        return JSONResponse(content=result, status_code=404)
+
 @router.get("/mpu/sensor/{project_id}")
 async def get_mpu_by_project_id(request: Request, project_id: int):
     controller = request.app.state.mpu_controller

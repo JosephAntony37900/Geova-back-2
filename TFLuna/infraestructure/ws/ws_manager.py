@@ -14,12 +14,12 @@ class WebSocketManager:
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-            print(f"❌ Cliente WebSocket desconectado (Sensor TF-Luna)")
+            print(f"Cliente WebSocket desconectado (Sensor TF-Luna)")
 
     async def send_data(self, data: dict):
         for conn in self.active_connections:
             try:
                 await conn.send_json(data)
             except Exception as e:
-                print("❌ Error enviando datos por WebSocket:", e)
+                print("Error enviando datos por WebSocket:", e)
 ws_manager = WebSocketManager()

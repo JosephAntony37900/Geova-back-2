@@ -12,6 +12,11 @@ class TFController:
     async def create_sensor(self, data: SensorTF):
         return await self.usecase.create(data)
     
+    async def update_sensor(self, project_id: int, data: SensorTF):
+        return await self.usecase.update(project_id, data)
+    
+    async def delete_sensor(self, project_id: int):
+        return await self.usecase.delete(project_id)
+    
     async def get_by_project_id(self, project_id: int):
         return await self.usecase.get_by_project_id(project_id)
-

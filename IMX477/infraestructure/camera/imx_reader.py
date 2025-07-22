@@ -1,3 +1,4 @@
+# IMX477/infraestructure/camera/imx_reader.py
 import platform
 import cv2
 import numpy as np
