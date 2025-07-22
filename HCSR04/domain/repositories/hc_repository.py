@@ -1,10 +1,9 @@
-# MPU6050/domain/repositories/mpu_repository.py
 from abc import ABC, abstractmethod
-from MPU6050.domain.entities.sensor_mpu import SensorMPU
+from HCSR04.domain.entities.hc_sensor import HCSensorData
 
-class MPURepository(ABC):
+class HCSensorRepository(ABC):
     @abstractmethod
-    async def save(self, sensor_data: SensorMPU, online: bool): pass
+    async def save(self, sensor_data: HCSensorData, online: bool): pass
 
     @abstractmethod
     async def exists_by_project(self, project_id: int, online: bool): pass
