@@ -1,5 +1,6 @@
 # main.py
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn, asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -17,6 +18,7 @@ from MPU6050.infraestructure.dependencies import init_mpu_dependencies
 
 from TFLuna.infraestructure.routes.routes_tf import router as tf_router
 from IMX477.infraestructure.routes.routes_imx import router as imx_router
+from IMX477.infraestructure.routes.streaming_routes import router as streaming_router  # Nuevo router de streaming
 from MPU6050.infraestructure.routes.routes_mpu import router as mpu_router
 # from HCSR04.infraestructure.routes.routes_hc import router as hc_router
 
@@ -33,6 +35,11 @@ rabbitmq_config = get_rabbitmq_config()
 async def lifespan(app: FastAPI):
     BLE_ADDRESS = "00:11:22:33:44:55" 
     BLE_CHAR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"  
+
+    print("🚀 Iniciando aplicación...")
+    print("🌐 Servidor accesible en:")
+    print("   - http://localhost:8000")
+    print("   - http://raspberrypi.local:8000")
 
     # Iniciar dependencias
     init_tf_dependencies(app, local_session, remote_session, rabbitmq_config)
@@ -80,16 +87,40 @@ async def lifespan(app: FastAPI):
 
     # Tareas de sincronización
     async def sync_tf():
-        await sync_tf_pending_data(local_session, remote_session, is_connected)
+        while True:
+            try:
+                await sync_tf_pending_data(local_session, remote_session, is_connected)
+                await asyncio.sleep(30)  # Sincronizar cada 30 segundos
+            except Exception as e:
+                print(f"❌ Error en sync TF: {e}")
+                await asyncio.sleep(60)  # Esperar más tiempo si hay error
 
     async def sync_imx():
-        await sync_imx_pending_data(local_session, remote_session, is_connected)
+        while True:
+            try:
+                await sync_imx_pending_data(local_session, remote_session, is_connected)
+                await asyncio.sleep(30)
+            except Exception as e:
+                print(f"❌ Error en sync IMX: {e}")
+                await asyncio.sleep(60)
 
     async def sync_mpu():
-        await sync_mpu_pending_data(local_session, remote_session, is_connected)
+        while True:
+            try:
+                await sync_mpu_pending_data(local_session, remote_session, is_connected)
+                await asyncio.sleep(30)
+            except Exception as e:
+                print(f"❌ Error en sync MPU: {e}")
+                await asyncio.sleep(60)
 
     # async def sync_hc():
-    #     await sync_hc_pending_data(local_session, remote_session, is_connected)
+    #     while True:
+    #         try:
+    #             await sync_hc_pending_data(local_session, remote_session, is_connected)
+    #             await asyncio.sleep(30)
+    #         except Exception as e:
+    #             print(f"❌ Error en sync HC: {e}")
+    #             await asyncio.sleep(60)
 
     # Iniciar tareas en segundo plano
     asyncio.create_task(tf_task())
@@ -99,14 +130,85 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(sync_mpu())
     # asyncio.create_task(sync_hc())
 
+    print("✅ Todas las tareas iniciadas correctamente")
     yield
 
-app = FastAPI(lifespan=lifespan)
+    print("🛑 Cerrando aplicación...")
 
-app.include_router(tf_router)
-app.include_router(imx_router)
-app.include_router(mpu_router)
-# app.include_router(hc_router)
+app = FastAPI(
+    title="Raspberry Pi Sensor API",
+    description="API para sensores IMX477, TF-Luna, MPU6050 con streaming de video",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Configuración CORS para mDNS y desarrollo local
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://raspberrypi.local:3000",   # React en Raspberry Pi
+        "http://raspberrypi.local:5173",   # Vite en Raspberry Pi
+        "http://raspberrypi.local",        # Raspberry Pi general
+        "http://192.168.*",                # Red local (patrón)
+        "http://10.*",                     # Red local (patrón)
+        "http://172.16.*",                 # Red local (patrón)
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+# Incluir todos los routers
+app.include_router(tf_router, prefix="/api", tags=["TF-Luna"])
+app.include_router(imx_router, prefix="/api", tags=["IMX477"])
+app.include_router(streaming_router, prefix="/api", tags=["Streaming"])
+app.include_router(mpu_router, prefix="/api", tags=["MPU6050"])
+# app.include_router(hc_router, prefix="/api", tags=["HC-SR04"])
+
+# Endpoint de health check
+@app.get("/")
+async def root():
+    return {
+        "message": "Raspberry Pi Sensor API",
+        "status": "running",
+        "endpoints": {
+            "docs": "/docs",
+            "tf_luna": "/api/tf/",
+            "imx477": "/api/imx477/",
+            "streaming": "/api/imx477/streaming/",
+            "mpu6050": "/api/mpu6050/",
+            "health": "/health"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": "2025-01-15T12:00:00Z",
+        "services": {
+            "database": "connected" if await is_connected() else "local_only",
+            "sensors": "active",
+            "streaming": "available"
+        }
+    }
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    print("🔧 Configurando servidor...")
+    print("📍 Asegúrate de que Avahi/Bonjour esté configurado para mDNS")
+    
+    # Configuración optimizada para Raspberry Pi
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0",  # Escuchar en todas las interfaces
+        port=8000, 
+        reload=True,
+        reload_dirs=["./"],  # Solo vigilar directorio actual
+        log_level="info",
+        access_log=True
+    )
