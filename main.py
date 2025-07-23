@@ -6,6 +6,7 @@ import uvicorn, asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from core.config import get_local_engine, get_remote_engine, get_rabbitmq_config
+from core.cors import setup_cors
 from TFLuna.infraestructure.sync.sync_service import sync_tf_pending_data
 from IMX477.infraestructure.sync.sync_service import sync_imx_pending_data
 from MPU6050.infraestructure.sync.sync_service import sync_mpu_pending_data
@@ -141,6 +142,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+setup_cors(app)
 
 # Configuración CORS para mDNS y desarrollo local
 app.add_middleware(
