@@ -1,5 +1,5 @@
 # main.py
-# main.py
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -11,23 +11,33 @@ from core.cors import setup_cors
 from TFLuna.infraestructure.sync.sync_service import sync_tf_pending_data
 from IMX477.infraestructure.sync.sync_service import sync_imx_pending_data
 from MPU6050.infraestructure.sync.sync_service import sync_mpu_pending_data
-# from HCSR04.infraestructure.sync.sync_service import sync_hc_pending_data
+from HCSR04.infraestructure.sync.sync_service import sync_hc_pending_data
 
 from TFLuna.infraestructure.dependencies import init_tf_dependencies, is_connected
 from IMX477.infraestructure.dependencies import init_imx_dependencies
 from MPU6050.infraestructure.dependencies import init_mpu_dependencies
-# from HCSR04.infraestructure.dependencies import init_hc_dependencies
+from HCSR04.infraestructure.dependencies import init_hc_dependencies
 
 from TFLuna.infraestructure.routes.routes_tf import router as tf_router
 from IMX477.infraestructure.routes.routes_imx import router as imx_router
 from IMX477.infraestructure.routes.streaming_routes import router as streaming_router  # Router de streaming actualizado
 from MPU6050.infraestructure.routes.routes_mpu import router as mpu_router
-# from HCSR04.infraestructure.routes.routes_hc import router as hc_router
+from HCSR04.infraestructure.routes.routes_hc import router as hc_router
 
 from TFLuna.infraestructure.repositories.schemas_sqlalchemy import Base as TFBase
 from IMX477.infraestructure.repositories.schemas_sqlalchemy import Base as IMXBase
 from MPU6050.infraestructure.repositories.schemas_sqlalchemy import Base as MPUBase
-# from HCSR04.infraestructure.repositories.schemas_sqlalchemy import Base as HCBase
+from HCSR04.infraestructure.repositories.schemas_sqlalchemy import Base as HCBase
+
+from TFLuna.infraestructure.routes.routes_tf import router_ws_tf
+from MPU6050.infraestructure.routes.routes_mpu import router_ws_mpu
+from IMX477.infraestructure.routes.routes_imx import router_ws_imx
+from HCSR04.infraestructure.routes.routes_hc import router_ws_hc
+
+from TFLuna.infraestructure.ws.ws_manager import ws_manager
+from MPU6050.infraestructure.ws.ws_manager import ws_manager_mpu
+from IMX477.infraestructure.ws.ws_manager import ws_manager_imx
+from HCSR04.infraestructure.ws.ws_manager import ws_manager_hc
 
 local_session = get_local_engine()
 remote_session = get_remote_engine()
@@ -36,104 +46,144 @@ rabbitmq_config = get_rabbitmq_config()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     BLE_ADDRESS = "00:11:22:33:44:55" 
-    BLE_CHAR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"  
+    BLE_CHAR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
 
-    print("📺 Streaming disponible en:")
-    print("   - http://raspberrypi.local:8000/imx477/streaming/video")
-
-    # Iniciar dependencias
     init_tf_dependencies(app, local_session, remote_session, rabbitmq_config)
     init_imx_dependencies(app, local_session, remote_session, rabbitmq_config)
     init_mpu_dependencies(app, local_session, remote_session, rabbitmq_config, is_connected)
-    # init_hc_dependencies(app, local_session, remote_session, rabbitmq_config, is_connected, BLE_ADDRESS, BLE_CHAR_UUID)
+    init_hc_dependencies(app, local_session, remote_session, rabbitmq_config, is_connected, BLE_ADDRESS, BLE_CHAR_UUID)
 
-    # Crear tablas
     async def create_tables(engine: AsyncEngine):
         async with engine.begin() as conn:
             await conn.run_sync(TFBase.metadata.create_all)
             await conn.run_sync(IMXBase.metadata.create_all)
             await conn.run_sync(MPUBase.metadata.create_all)
-            # await conn.run_sync(HCBase.metadata.create_all)
+            await conn.run_sync(HCBase.metadata.create_all)
 
     await create_tables(local_session.kw["bind"])
+
     if await is_connected():
         await create_tables(remote_session.kw["bind"])
     else:
         print("🔌 Sin conexión: se omitió la creación de tablas remotas")
 
-    # Tarea de lectura TF
     async def tf_task():
         while True:
             try:
+                internet_available = await is_connected()
                 controller = app.state.tf_controller
-                data = await controller.get_tf_data(event=False)
+                data = await controller.get_tf_data(event=True)
                 print("📡 TF-Luna:", data.dict() if data else "Sin datos")
-            except Exception as e:
+                if not internet_available and data:
+                    await ws_manager.send_data(data.dict())
+            except Exception:
                 import traceback
+                print("❌ Error en TF-Luna:")
                 traceback.print_exc()
             await asyncio.sleep(1)
 
-    # Tarea de lectura HC-SR04 BLE
-    # async def hc_task():
-    #     while True:
-    #         try:
-    #             controller = app.state.hc_controller
-    #             data = await controller.get_hc_data(event=True)
-    #             print("🔵 HC-SR04 BLE:", data.dict() if data else "Sin datos")
-    #         except Exception as e:
-    #             import traceback
-    #             traceback.print_exc()
-    #         await asyncio.sleep(1)  
-
-    # Tareas de sincronización
-    async def sync_tf():
+    async def imx_task():
         while True:
             try:
-                await sync_tf_pending_data(local_session, remote_session, is_connected)
-                await asyncio.sleep(30)  # Sincronizar cada 30 segundos
+                internet_available = await is_connected()
+                controller = app.state.imx_controller
+                data = await controller.get_imx_data(event=True)
+                print("📷 IMX477:", data.dict() if data else "Sin datos")
+                if not internet_available and data:
+                    await ws_manager_imx.send_data(data.dict())
+            except Exception:
+                import traceback
+                print("❌ Error en IMX477:")
+                traceback.print_exc()
+            await asyncio.sleep(3)
+
+    async def mpu_task():
+        while True:
+            try:
+                internet_available = await is_connected()
+                controller = app.state.mpu_controller
+                data = await controller.get_mpu_data(event=True)
+                print("🌀 MPU6050:", data.dict() if data else "Sin datos")
+                if not internet_available and data:
+                    await ws_manager_mpu.send_data(data.dict())
+            except Exception:
+                import traceback
+                print("❌ Error en MPU6050:")
+                traceback.print_exc()
+            await asyncio.sleep(1)
+
+    async def hc_task():
+        while True:
+            try:
+                internet_available = await is_connected()
+                controller = app.state.hc_controller
+                data = await controller.get_hc_data(event=True)
+                print("🔵 HC-SR04 BLE:", data.dict() if data else "Sin datos")
+                if not internet_available and data:
+                    await ws_manager_hc.send_data(data.dict())
+            except Exception:
+                import traceback
+                print("❌ Error en HC-SR04:")
+                traceback.print_exc()
+            await asyncio.sleep(2)
+
+    async def sync_tf():
+        print("🔄 Iniciando sincronización TF-Luna...")
+        while True:
+            try:
+                if await is_connected():
+                    await sync_tf_pending_data(local_session, remote_session, is_connected)
+                await asyncio.sleep(30)
             except Exception as e:
-                print(f"❌ Error en sync TF: {e}")
-                await asyncio.sleep(60)  # Esperar más tiempo si hay error
+                print(f"❌ Error en sync TF-Luna: {e}")
+                await asyncio.sleep(30)
 
     async def sync_imx():
+        print("🔄 Iniciando sincronización IMX477...")
         while True:
             try:
-                await sync_imx_pending_data(local_session, remote_session, is_connected)
+                if await is_connected():
+                    await sync_imx_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
-                print(f"❌ Error en sync IMX: {e}")
-                await asyncio.sleep(60)
+                print(f"❌ Error en sync IMX477: {e}")
+                await asyncio.sleep(30)
 
     async def sync_mpu():
+        print("🔄 Iniciando sincronización MPU6050...")
         while True:
             try:
-                await sync_mpu_pending_data(local_session, remote_session, is_connected)
+                if await is_connected():
+                    await sync_mpu_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
-                print(f"❌ Error en sync MPU: {e}")
-                await asyncio.sleep(60)
+                print(f"❌ Error en sync MPU6050: {e}")
+                await asyncio.sleep(30)
 
-    # async def sync_hc():
-    #     while True:
-    #         try:
-    #             await sync_hc_pending_data(local_session, remote_session, is_connected)
-    #             await asyncio.sleep(30)
-    #         except Exception as e:
-    #             print(f"❌ Error en sync HC: {e}")
-    #             await asyncio.sleep(60)
+    async def sync_hc():
+        print("🔄 Iniciando sincronización HC-SR04...")
+        while True:
+            try:
+                if await is_connected():
+                    await sync_hc_pending_data(local_session, remote_session, is_connected)
+                await asyncio.sleep(30)
+            except Exception as e:
+                print(f"❌ Error en sync HC-SR04: {e}")
+                await asyncio.sleep(30)
 
-    # Iniciar tareas en segundo plano
+    print("📡 Creando tareas de sensores...")
     asyncio.create_task(tf_task())
-    # asyncio.create_task(hc_task())
+    asyncio.create_task(imx_task())
+    asyncio.create_task(mpu_task())
+    asyncio.create_task(hc_task())
+
+    print("🔄 Creando tareas de sincronización...")
     asyncio.create_task(sync_tf())
     asyncio.create_task(sync_imx())
     asyncio.create_task(sync_mpu())
-    # asyncio.create_task(sync_hc())
-
-    print("✅ Todas las tareas iniciadas correctamente")
+    asyncio.create_task(sync_hc())
     print("📷 Streaming de IMX477 listo para usar")
     yield
-
     print("🛑 Cerrando aplicación...")
 
 app = FastAPI(
@@ -166,12 +216,17 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
+app.include_router(router_ws_tf)
+app.include_router(router_ws_mpu)
+app.include_router(router_ws_imx)
+app.include_router(router_ws_hc)
+
 # Incluir todos los routers
 app.include_router(tf_router, tags=["TF-Luna"])
 app.include_router(imx_router, tags=["IMX477"])
 app.include_router(streaming_router, tags=["Streaming"])  # Router de streaming integrado
 app.include_router(mpu_router, tags=["MPU6050"])
-# app.include_router(hc_router, tags=["HC-SR04"])
+app.include_router(hc_router, tags=["HC-SR04"])
 
 # Endpoint de health check actualizado
 @app.get("/")

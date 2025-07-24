@@ -16,11 +16,9 @@ class MPUUseCase:
             return None
 
         data = SensorMPU(id_project=project_id, event=event, **raw)
+        
+        # Solo publicar al MQTT, NUNCA guardar en BD desde las tareas
         self.publisher.publish(data)
-
-        if event:
-            online = await self.is_connected()
-            await self.repository.save(data, online)
 
         return data
 
