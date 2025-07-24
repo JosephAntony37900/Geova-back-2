@@ -10,17 +10,15 @@ class HCUseCase:
         self.publisher = publisher
         self.is_connected = is_connected
 
-    async def execute(self, project_id=1, event=True):
+    async def execute(self, project_id=1, event=False):
         raw = self.reader.read()
         if not raw:
             return None
 
         data = HCSensorData(id_project=project_id, event=event, **raw)
+        
+        # Solo publicar, NO guardar
         self.publisher.publish(data)
-
-        if event:
-            online = await self.is_connected()
-            await self.repository.save(data, online)
 
         return data
 
