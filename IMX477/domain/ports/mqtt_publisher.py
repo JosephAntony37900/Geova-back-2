@@ -1,3 +1,4 @@
+#IMX477/domain/ports/mqtt_publisher.py
 from abc import ABC, abstractmethod
 from IMX477.domain.entities.sensor_imx import SensorIMX477
 
