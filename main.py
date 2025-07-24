@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
                 import traceback
                 print("❌ Error en IMX477:")
                 traceback.print_exc()
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
 
     async def mpu_task():
         while True:
