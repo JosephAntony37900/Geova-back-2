@@ -1,3 +1,4 @@
+#IMX477/infraestructure/mqtt/publisher.py
 from IMX477.domain.ports.mqtt_publisher import MQTTPublisher
 from IMX477.domain.entities.sensor_imx import SensorIMX477
 import pika, json

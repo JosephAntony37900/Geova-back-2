@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
             try:
                 internet_available = await is_connected()
                 controller = app.state.tf_controller
-                data = await controller.get_tf_data(event=True)
+                data = await controller.get_tf_data(event=False)
                 print("📡 TF-Luna:", data.dict() if data else "Sin datos")
                 if not internet_available and data:
                     await ws_manager.send_data(data.dict())
@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
             try:
                 internet_available = await is_connected()
                 controller = app.state.imx_controller
-                data = await controller.get_imx_data(event=True)
+                data = await controller.get_imx_data(event=False)
                 print("📷 IMX477:", data.dict() if data else "Sin datos")
                 if not internet_available and data:
                     await ws_manager_imx.send_data(data.dict())
@@ -102,7 +102,7 @@ async def lifespan(app: FastAPI):
             try:
                 internet_available = await is_connected()
                 controller = app.state.mpu_controller
-                data = await controller.get_mpu_data(event=True)
+                data = await controller.get_mpu_data(event=False)
                 print("🌀 MPU6050:", data.dict() if data else "Sin datos")
                 if not internet_available and data:
                     await ws_manager_mpu.send_data(data.dict())
@@ -114,18 +114,23 @@ async def lifespan(app: FastAPI):
 
     async def hc_task():
         while True:
-            try:
-                internet_available = await is_connected()
-                controller = app.state.hc_controller
-                data = await controller.get_hc_data(event=True)
-                print("🔵 HC-SR04 BLE:", data.dict() if data else "Sin datos")
-                if not internet_available and data:
-                    await ws_manager_hc.send_data(data.dict())
-            except Exception:
-                import traceback
-                print("❌ Error en HC-SR04:")
-                traceback.print_exc()
-            await asyncio.sleep(2)
+                try:
+                    internet_available = await is_connected()
+                    controller = app.state.hc_controller
+                    data = await controller.get_hc_data(event=False)
+
+                    if data:
+                        print("🔵 HC-SR04 BLE:", data.dict())
+                        if not internet_available:
+                            await ws_manager_hc.send_data(data.dict())
+                    else:
+                        print("🔵 HC-SR04 BLE: Sin datos")
+                                
+                except Exception:
+                        import traceback
+                        print("❌ Error en HC-SR04:")
+                        traceback.print_exc()
+                await asyncio.sleep(2)
 
     async def sync_tf():
         print("🔄 Iniciando sincronización TF-Luna...")
