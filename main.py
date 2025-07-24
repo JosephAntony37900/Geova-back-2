@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
         print("🔌 Sin conexión: se omitió la creación de tablas remotas")
 
     # Tarea de lectura TF
-    '''async def tf_task():
+    async def tf_task():
         while True:
             try:
                 controller = app.state.tf_controller
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-            await asyncio.sleep(1)'''
+            await asyncio.sleep(1)
 
     # Tarea de lectura HC-SR04 BLE
     # async def hc_task():
@@ -123,7 +123,7 @@ async def lifespan(app: FastAPI):
     #             await asyncio.sleep(60)
 
     # Iniciar tareas en segundo plano
-    #asyncio.create_task(tf_task())
+    asyncio.create_task(tf_task())
     # asyncio.create_task(hc_task())
     asyncio.create_task(sync_tf())
     asyncio.create_task(sync_imx())
