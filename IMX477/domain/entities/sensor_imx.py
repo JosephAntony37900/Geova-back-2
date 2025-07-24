@@ -1,3 +1,4 @@
+#IMX477/domain/entities/sensor_imx.py
 from datetime import datetime
 from pydantic import BaseModel
 

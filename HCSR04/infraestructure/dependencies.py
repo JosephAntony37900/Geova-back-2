@@ -1,3 +1,4 @@
+# HCSR04/infraestructure/dependencies.py
 from fastapi import FastAPI
 from HCSR04.infraestructure.ble.hc_ble_reader import HCBLEReader
 from HCSR04.infraestructure.mqtt.publisher import RabbitMQPublisher
