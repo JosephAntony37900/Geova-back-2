@@ -1,4 +1,5 @@
 # main.py
+# main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from MPU6050.infraestructure.dependencies import init_mpu_dependencies
 
 from TFLuna.infraestructure.routes.routes_tf import router as tf_router
 from IMX477.infraestructure.routes.routes_imx import router as imx_router
-from IMX477.infraestructure.routes.streaming_routes import router as streaming_router  # Nuevo router de streaming
+from IMX477.infraestructure.routes.streaming_routes import router as streaming_router  # Router de streaming actualizado
 from MPU6050.infraestructure.routes.routes_mpu import router as mpu_router
 # from HCSR04.infraestructure.routes.routes_hc import router as hc_router
 
@@ -37,10 +38,8 @@ async def lifespan(app: FastAPI):
     BLE_ADDRESS = "00:11:22:33:44:55" 
     BLE_CHAR_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"  
 
-    print("🚀 Iniciando aplicación...")
-    print("🌐 Servidor accesible en:")
-    print("   - http://localhost:8000")
-    print("   - http://raspberrypi.local:8000")
+    print("📺 Streaming disponible en:")
+    print("   - http://raspberrypi.local:8000/imx477/streaming/video")
 
     # Iniciar dependencias
     init_tf_dependencies(app, local_session, remote_session, rabbitmq_config)
@@ -132,20 +131,21 @@ async def lifespan(app: FastAPI):
     # asyncio.create_task(sync_hc())
 
     print("✅ Todas las tareas iniciadas correctamente")
+    print("📷 Streaming de IMX477 listo para usar")
     yield
 
     print("🛑 Cerrando aplicación...")
 
 app = FastAPI(
     title="Raspberry Pi Sensor API",
-    description="API para sensores IMX477, TF-Luna, MPU6050 con streaming de video",
+    description="API para sensores IMX477, TF-Luna, MPU6050 con streaming de video en tiempo real",
     version="1.0.0",
     lifespan=lifespan
 )
 
 setup_cors(app)
 
-# Configuración CORS para mDNS y desarrollo local
+# Configuración CORS mejorada para streaming
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -167,51 +167,65 @@ app.add_middleware(
 )
 
 # Incluir todos los routers
-app.include_router(tf_router, prefix="/api", tags=["TF-Luna"])
-app.include_router(imx_router, prefix="/api", tags=["IMX477"])
-app.include_router(streaming_router, prefix="/api", tags=["Streaming"])
-app.include_router(mpu_router, prefix="/api", tags=["MPU6050"])
-# app.include_router(hc_router, prefix="/api", tags=["HC-SR04"])
+app.include_router(tf_router, tags=["TF-Luna"])
+app.include_router(imx_router, tags=["IMX477"])
+app.include_router(streaming_router, tags=["Streaming"])  # Router de streaming integrado
+app.include_router(mpu_router, tags=["MPU6050"])
+# app.include_router(hc_router, tags=["HC-SR04"])
 
-# Endpoint de health check
+# Endpoint de health check actualizado
 @app.get("/")
 async def root():
     return {
         "message": "Raspberry Pi Sensor API",
         "status": "running",
+        "version": "1.0.0",
         "endpoints": {
             "docs": "/docs",
-            "tf_luna": "/api/tf/",
-            "imx477": "/api/imx477/",
-            "streaming": "/api/imx477/streaming/",
-            "mpu6050": "/api/mpu6050/",
+            "tf_luna": "/tf/",
+            "imx477": "/imx477/",
+            "streaming": {
+                "start": "/imx477/streaming/start",
+                "stop": "/imx477/streaming/stop",
+                "video": "/imx477/streaming/video",
+                "status": "/imx477/streaming/status"
+            },
+            "mpu6050": "/mpu6050/",
             "health": "/health"
         }
     }
 
 @app.get("/health")
 async def health_check():
+    # Importar aquí para evitar dependencias circulares
+    from IMX477.infraestructure.streaming.streamer import Streamer
+    
+    # Crear instancia temporal para check de estado
+    temp_streamer = Streamer()
+    streaming_status = temp_streamer.get_status()
+    
     return {
         "status": "healthy",
         "timestamp": "2025-01-15T12:00:00Z",
         "services": {
             "database": "connected" if await is_connected() else "local_only",
             "sensors": "active",
-            "streaming": "available"
+            "streaming": {
+                "available": True,
+                "active": streaming_status["active"],
+                "fps": streaming_status["fps"]
+            }
         }
     }
 
 if __name__ == "__main__":
-    print("🔧 Configurando servidor...")
-    print("📍 Asegúrate de que Avahi/Bonjour esté configurado para mDNS")
     
-    # Configuración optimizada para Raspberry Pi
     uvicorn.run(
         "main:app", 
-        host="0.0.0.0",  # Escuchar en todas las interfaces
+        host="0.0.0.0",
         port=8000, 
         reload=True,
-        reload_dirs=["./"],  # Solo vigilar directorio actual
+        reload_dirs=["./"],
         log_level="info",
         access_log=True
     )
