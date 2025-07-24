@@ -1,3 +1,4 @@
+# HCSR04/infraestructure/repositories/schemas_sqlalchemy.py
 from sqlalchemy import Column, Integer, Float, Boolean, DateTime
 from sqlalchemy.orm import declarative_base
 from datetime import datetime

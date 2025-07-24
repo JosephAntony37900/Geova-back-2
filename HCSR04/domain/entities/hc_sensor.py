@@ -1,3 +1,4 @@
+#HCSR04/domain/entities/hc_sensor.py
 from datetime import datetime
 from pydantic import BaseModel
 

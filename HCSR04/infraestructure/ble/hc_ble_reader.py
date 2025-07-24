@@ -1,3 +1,4 @@
+# HCSR04/infraestructure/ble/hc_ble_reader.py
 import asyncio
 import platform
 from bleak import BleakClient
@@ -15,28 +16,64 @@ class HCBLEReader(BLEReader):
         else:
             self.is_simulation = False
 
-    def read(self) -> dict:
-        """Lectura síncrona desde BLE"""
+    async def read_async(self) -> dict | None:
+        """Lectura asíncrona desde BLE"""
         if self.is_simulation:
-            # Datos simulados para Windows
-            return {"distancia_cm": 25.5}
+            # En Windows, simular que no hay conexión BLE
+            print("🔵 HC-SR04 BLE: Sin conexión BLE (simulación)")
+            return None
         
-        data = asyncio.run(self._read_ble())
-        if data:
+        try:
+            data = await self._read_ble()
+            if data:
+                try:
+                    distance = float(data)
+                    return {"distancia_cm": distance}
+                except ValueError:
+                    print(f"🔵 HC-SR04 BLE: Error al convertir datos: {data}")
+                    return None
+            return None
+        except Exception as e:
+            print(f"🔵 HC-SR04 BLE: Error de conexión - {e}")
+            return None
+
+    def read(self) -> dict | None:
+        """Método síncrono mantenido para compatibilidad"""
+        # ⚠️ ADVERTENCIA: Este método no debe usarse desde contextos async
+        # Solo se mantiene para compatibilidad hacia atrás
+        if self.is_simulation:
+            return None
+        
+        try:
+            # Verificar si ya estamos en un event loop
             try:
-                distance = float(data)
-                return {"distancia_cm": distance}
-            except ValueError:
-                print(f"Error al convertir datos BLE: {data}")
+                loop = asyncio.get_running_loop()
+                print("⚠️ HC-SR04: read() llamado desde contexto async, usar read_async() en su lugar")
                 return None
-        return None
+            except RuntimeError:
+                # No hay event loop, podemos usar asyncio.run
+                data = asyncio.run(self._read_ble())
+                if data:
+                    try:
+                        distance = float(data)
+                        return {"distancia_cm": distance}
+                    except ValueError:
+                        print(f"🔵 HC-SR04 BLE: Error al convertir datos: {data}")
+                        return None
+                return None
+        except Exception as e:
+            print(f"🔵 HC-SR04 BLE: Error de conexión - {e}")
+            return None
 
     async def _read_ble(self) -> str | None:
+        """Lectura interna BLE"""
         try:
             async with BleakClient(self.address) as client:
                 if await client.is_connected():
                     data = await client.read_gatt_char(self.char_uuid)
                     return data.decode("utf-8").strip()
+                else:
+                    print("🔵 HC-SR04 BLE: No se pudo conectar al dispositivo")
         except Exception as e:
-            print(f"Error BLE HC-SR04: {e}")
+            print(f"🔵 HC-SR04 BLE: Error de conexión - {e}")
         return None

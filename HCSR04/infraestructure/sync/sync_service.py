@@ -1,3 +1,4 @@
+# HCSR04/infraestructure/sync/sync_service.py
 from sqlalchemy import select, update
 from HCSR04.infraestructure.repositories.schemas_sqlalchemy import SensorHCModel
 import asyncio
