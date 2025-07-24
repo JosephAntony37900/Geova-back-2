@@ -1,74 +1,148 @@
 # IMX477/infraestructure/routes/streaming_routes.py
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
-from IMX477.infraestructure.streaming.mjpeg_streamer import mjpeg_streamer
+from IMX477.infraestructure.streaming.streamer import Streamer
 import asyncio
+import logging
 
-router = APIRouter()
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/imx477/streaming")
 
-def generate_mjpeg_stream():
-    """Generador para el stream MJPEG"""
-    while mjpeg_streamer.is_active():
-        frame_bytes = mjpeg_streamer.get_current_frame()
-        if frame_bytes:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        else:
-            # Si no hay frame, enviar frame vacío para mantener conexión
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + b'\r\n')
-        
-        # Pequeña pausa para controlar el stream
-        import time
-        time.sleep(0.033)  # ~30 FPS
+# Instancia global del streamer
+streamer = Streamer()
 
-@router.post("/imx477/streaming/start")
+@router.post("/start")
 async def start_streaming():
-    """Inicia el streaming de la cámara"""
+    """Inicia el streaming de video."""
     try:
-        mjpeg_streamer.start_streaming()
-        return JSONResponse(content={
-            "status": "success",
-            "message": "Streaming iniciado correctamente"
-        })
+        logger.info("📷 Iniciando streaming de video...")
+        success = await streamer.start_stream()
+        
+        if success:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "success",
+                    "message": "Stream iniciado correctamente",
+                    "active": True
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="No se pudo iniciar el streaming. Verifique que la cámara esté disponible."
+            )
+            
     except Exception as e:
-        return JSONResponse(content={
-            "status": "error", 
-            "message": f"Error al iniciar streaming: {str(e)}"
-        }, status_code=500)
+        logger.error(f"Error al iniciar streaming: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno al iniciar streaming: {str(e)}"
+        )
 
-@router.post("/imx477/streaming/stop")
+@router.post("/stop")
 async def stop_streaming():
-    """Detiene el streaming de la cámara"""
+    """Detiene el streaming de video."""
     try:
-        mjpeg_streamer.stop_streaming()
-        return JSONResponse(content={
-            "status": "success",
-            "message": "Streaming detenido correctamente"
-        })
+        logger.info("🛑 Deteniendo streaming de video...")
+        success = await streamer.stop_stream()
+        
+        if success:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "success",
+                    "message": "Stream detenido correctamente",
+                    "active": False
+                }
+            )
+        else:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "success",
+                    "message": "No había streaming activo",
+                    "active": False
+                }
+            )
+            
     except Exception as e:
-        return JSONResponse(content={
-            "status": "error",
-            "message": f"Error al detener streaming: {str(e)}"
-        }, status_code=500)
+        logger.error(f"Error al detener streaming: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno al detener streaming: {str(e)}"
+        )
 
-@router.get("/imx477/streaming/status")
+@router.get("/status")
 async def get_streaming_status():
-    """Obtiene el estado del streaming"""
-    return JSONResponse(content={
-        "active": mjpeg_streamer.is_active(),
-        "fps": 30
-    })
+    """Obtiene el estado actual del streaming."""
+    try:
+        status = streamer.get_status()
+        return JSONResponse(
+            status_code=200,
+            content=status
+        )
+    except Exception as e:
+        logger.error(f"Error al obtener estado: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno al obtener estado: {str(e)}"
+        )
 
-@router.get("/imx477/streaming/video")
-async def video_feed():
-    """Endpoint para el stream MJPEG"""
-    if not mjpeg_streamer.is_active():
-        return JSONResponse(content={
-            "error": "Streaming no está activo. Inicie el streaming primero."
-        }, status_code=400)
-    
-    return StreamingResponse(
-        generate_mjpeg_stream(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
+@router.get("/video")
+def video_feed():
+    """Stream de video en tiempo real - versión SÍNCRONA como tu API de prueba."""
+    try:
+        # Verificar que el streaming esté activo
+        status = streamer.get_status()
+        if not status["active"]:
+            return Response(
+                status_code=503,
+                content="Stream no está activo. Inicie el streaming primero con /start"
+            )
+        
+        logger.info("📺 Iniciando feed de video...")
+        
+        return StreamingResponse(
+            streamer.generate_frames(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Connection": "close"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en video feed: {e}")
+        return Response(
+            status_code=500,
+            content=f"Error interno en video feed: {str(e)}"
+        )
+
+@router.get("/health")
+async def streaming_health():
+    """Health check específico para streaming."""
+    try:
+        status = streamer.get_status()
+        return JSONResponse(
+            status_code=200,
+            content={
+                "service": "IMX477 Streaming",
+                "status": "healthy",
+                "streaming_active": status["active"],
+                "fps": status["fps"],
+                "camera_available": True  # TODO: Implementar verificación real de cámara
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error en health check: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "service": "IMX477 Streaming",
+                "status": "unhealthy",
+                "error": str(e)
+            }
+        )
