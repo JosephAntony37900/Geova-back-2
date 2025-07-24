@@ -1,3 +1,4 @@
+# IMX477/infraestructure/sync/sync_service.py
 import asyncio
 from sqlalchemy import select, update
 from IMX477.infraestructure.repositories.schemas_sqlalchemy import SensorIMX477Model

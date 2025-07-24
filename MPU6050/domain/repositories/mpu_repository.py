@@ -7,6 +7,12 @@ class MPURepository(ABC):
     async def save(self, sensor_data: SensorMPU, online: bool): pass
 
     @abstractmethod
+    async def update(self, sensor_data: SensorMPU, online: bool): pass
+
+    @abstractmethod
+    async def delete(self, project_id: int, online: bool): pass
+
+    @abstractmethod
     async def exists_by_project(self, project_id: int, online: bool): pass
 
     @abstractmethod

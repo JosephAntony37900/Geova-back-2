@@ -16,11 +16,9 @@ class MPUUseCase:
             return None
 
         data = SensorMPU(id_project=project_id, event=event, **raw)
+        
+        # Solo publicar al MQTT, NUNCA guardar en BD desde las tareas
         self.publisher.publish(data)
-
-        if event:
-            online = await self.is_connected()
-            await self.repository.save(data, online)
 
         return data
 
@@ -37,6 +35,48 @@ class MPUUseCase:
         self.publisher.publish(data)
         await self.repository.save(data, online)
         return {"msg": "Datos guardados correctamente"}
+
+    async def update(self, project_id: int, data: SensorMPU):
+        online = await self.is_connected()
+        exists = await self.repository.exists_by_project(project_id, online)
+        
+        if not exists:
+            return {"msg": f"No existe una medición MPU6050 para el proyecto {project_id}", "success": False}
+
+        # Actualizar el project_id del data con el del parámetro
+        data.id_project = project_id
+        
+        self.publisher.publish(data)
+        await self.repository.update(data, online)
+        
+        return {"msg": "Datos MPU6050 actualizados correctamente", "success": True}
+
+    async def delete(self, project_id: int):
+        online = await self.is_connected()
+        exists = await self.repository.exists_by_project(project_id, online)
+        
+        if not exists:
+            return {"msg": f"No existe una medición MPU6050 para el proyecto {project_id}", "success": False}
+
+        await self.repository.delete(project_id, online)
+        
+        # Publicar evento de eliminación
+        try:
+            from MPU6050.domain.entities.sensor_mpu import SensorMPU
+            # Crear un objeto temporal para publicar el evento
+            temp_data = SensorMPU(
+                id_project=project_id,
+                ax=0.0, ay=0.0, az=0.0,
+                gx=0.0, gy=0.0, gz=0.0,
+                roll=0.0, pitch=0.0, apertura=0.0,
+                event=True
+            )
+            temp_data.__dict__["_action"] = "delete"  # Agregar metadato
+            self.publisher.publish(temp_data)
+        except Exception as e:
+            print(f"Error publicando evento de eliminación MPU: {e}")
+        
+        return {"msg": "Medición MPU6050 eliminada correctamente", "success": True}
 
     async def get_by_project_id(self, project_id: int) -> SensorMPU | None:
         online = await self.is_connected()

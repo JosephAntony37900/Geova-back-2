@@ -1,3 +1,4 @@
+# IMX477/infraestructure/dependencies.py
 from fastapi import FastAPI
 from IMX477.infraestructure.camera.imx_reader import IMXReader
 from IMX477.infraestructure.mqtt.publisher import RabbitMQPublisher
