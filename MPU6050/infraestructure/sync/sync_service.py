@@ -15,20 +15,25 @@ async def sync_mpu_pending_data(local_session_factory, remote_session_factory, i
                 for doc in unsynced:
                     try:
                         async with remote_session_factory() as remote:
-                            remote.add(SensorMPUModel(**doc.as_dict()))
+                            # Crear nuevo objeto sin el id para evitar conflictos
+                            doc_dict = doc.as_dict()
+                            doc_dict.pop('id', None)  # Remover id si existe
+                            remote_model = SensorMPUModel(**doc_dict)
+                            remote.add(remote_model)
                             await remote.commit()
 
-                        # Actualizar estado en local
+                        # Actualizar estado en local usando el ID específico
                         stmt_update = (
                             update(SensorMPUModel)
-                            .where(SensorMPUModel.id_project == doc.id_project)
+                            .where(SensorMPUModel.id == doc.id)  # Usar ID específico
                             .values(synced=True)
                         )
                         await local.execute(stmt_update)
                         await local.commit()
-                        print(f"MPU Sincronizado: {doc.id_project}")
+                        print(f"✅ MPU Sincronizado registro ID: {doc.id}, Proyecto: {doc.id_project}")
+                        
                     except Exception as e:
-                        print(f"Error al sincronizar MPU: {e}")
+                        print(f"❌ Error al sincronizar MPU registro {doc.id}: {e}")
         else:
             print("🔌 Sin conexión MPU: solo guardando localmente.")
         await asyncio.sleep(10)

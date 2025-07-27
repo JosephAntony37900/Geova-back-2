@@ -46,8 +46,8 @@ async def get_sensor_by_project_id(request: Request, project_id: int):
     controller = request.app.state.imx_controller
     data = await controller.get_by_project_id(project_id)
     if data:
-        return data.dict()
-    return JSONResponse(content={"error": "No se encontró medición para ese proyecto"}, status_code=404)
+        return data
+    return JSONResponse(content={"error": "No se encontró datos de la cámara para ese proyecto"}, status_code=404)
 
 @router_ws_imx.websocket("/imx477/sensor/ws")
 async def imx_ws(websocket: WebSocket):

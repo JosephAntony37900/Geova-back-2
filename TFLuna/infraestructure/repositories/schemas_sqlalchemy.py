@@ -8,7 +8,8 @@ Base = declarative_base()
 class SensorTFModel(Base):
     __tablename__ = "sensor_tf"
 
-    id_project = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_project = Column(Integer, index=True)
     distancia_cm = Column(Integer)
     distancia_m = Column(Float)
     fuerza_senal = Column(Integer)

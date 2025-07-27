@@ -33,7 +33,7 @@ class TFUseCase:
         exists = await self.repository.exists_by_project(data.id_project, online)
 
         if exists:
-            return {"msg": f"Ya existe una medición para el proyecto {data.id_project}"}
+            return {"msg": f"Ya existen 4 mediciones para el proyecto {data.id_project}"}
 
         self.publisher.publish(data)
         await self.repository.save(data, online)

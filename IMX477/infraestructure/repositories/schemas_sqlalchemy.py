@@ -8,7 +8,8 @@ Base = declarative_base()
 class SensorIMX477Model(Base):
     __tablename__ = "sensor_imx"
 
-    id_project = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_project = Column(Integer, index=True)
     resolution = Column(String)
     luminosidad_promedio = Column(Float)
     nitidez_score = Column(Float)

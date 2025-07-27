@@ -17,8 +17,11 @@ class MPUUseCase:
 
         data = SensorMPU(id_project=project_id, event=event, **raw)
         
-        # Solo publicar al MQTT, NUNCA guardar en BD desde las tareas
         self.publisher.publish(data)
+
+        if event:
+            online = await self.is_connected()
+            await self.repository.save(data, online)
 
         return data
 
@@ -30,11 +33,11 @@ class MPUUseCase:
         exists = await self.repository.exists_by_project(data.id_project, online)
 
         if exists:
-            return {"msg": f"Ya existe una medición con el sensor de inclinación MPU6050 para el proyecto {data.id_project}"}
+            return {"msg": f"Ya existen 4 mediciones MPU6050 para el proyecto {data.id_project}"}
 
         self.publisher.publish(data)
         await self.repository.save(data, online)
-        return {"msg": "Datos guardados correctamente"}
+        return {"msg": "Datos MPU6050 guardados correctamente"}
 
     async def update(self, project_id: int, data: SensorMPU):
         online = await self.is_connected()
@@ -63,7 +66,6 @@ class MPUUseCase:
         # Publicar evento de eliminación
         try:
             from MPU6050.domain.entities.sensor_mpu import SensorMPU
-            # Crear un objeto temporal para publicar el evento
             temp_data = SensorMPU(
                 id_project=project_id,
                 ax=0.0, ay=0.0, az=0.0,
@@ -71,13 +73,13 @@ class MPUUseCase:
                 roll=0.0, pitch=0.0, apertura=0.0,
                 event=True
             )
-            temp_data.__dict__["_action"] = "delete"  # Agregar metadato
+            temp_data.__dict__["_action"] = "delete"
             self.publisher.publish(temp_data)
         except Exception as e:
             print(f"Error publicando evento de eliminación MPU: {e}")
         
         return {"msg": "Medición MPU6050 eliminada correctamente", "success": True}
 
-    async def get_by_project_id(self, project_id: int) -> SensorMPU | None:
+    async def get_by_project_id(self, project_id: int):
         online = await self.is_connected()
         return await self.repository.get_by_project_id(project_id, online)

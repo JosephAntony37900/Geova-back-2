@@ -15,19 +15,25 @@ async def sync_imx_pending_data(local_session_factory, remote_session_factory, i
                 for doc in unsynced:
                     try:
                         async with remote_session_factory() as remote:
-                            remote.add(SensorIMX477Model(**doc.as_dict()))
+                            # Crear nuevo objeto sin el id para evitar conflictos
+                            doc_dict = doc.as_dict()
+                            doc_dict.pop('id', None)  # Remover id si existe
+                            remote_model = SensorIMX477Model(**doc_dict)
+                            remote.add(remote_model)
                             await remote.commit()
 
+                        # Actualizar estado en local usando el ID específico
                         stmt_update = (
                             update(SensorIMX477Model)
-                            .where(SensorIMX477Model.id_project == doc.id_project)
+                            .where(SensorIMX477Model.id == doc.id)  # Usar ID específico
                             .values(synced=True)
                         )
                         await local.execute(stmt_update)
                         await local.commit()
-                        print(f"✅ IMX sincronizado: {doc.id_project}")
+                        print(f"✅ IMX Sincronizado registro ID: {doc.id}, Proyecto: {doc.id_project}")
+                        
                     except Exception as e:
-                        print(f"❌ Error al sincronizar IMX: {e}")
+                        print(f"❌ Error al sincronizar IMX registro {doc.id}: {e}")
         else:
             print("🔌 Sin conexión (IMX): solo local.")
         await asyncio.sleep(10)

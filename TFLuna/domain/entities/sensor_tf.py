@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 class SensorTFLuna(BaseModel):
+    id: int | None = None
     id_project: int
     distancia_cm: int
     distancia_m: float

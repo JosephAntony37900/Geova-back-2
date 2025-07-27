@@ -8,7 +8,8 @@ Base = declarative_base()
 class SensorMPUModel(Base):
     __tablename__ = "sensor_mpu"
 
-    id_project = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_project = Column(Integer, index=True)
     ax = Column(Float)
     ay = Column(Float)
     az = Column(Float)

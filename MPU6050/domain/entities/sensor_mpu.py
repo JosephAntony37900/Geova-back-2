@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 class SensorMPU(BaseModel):
+    id: int | None = None
     id_project: int
     ax: float
     ay: float

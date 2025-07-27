@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 class SensorIMX477(BaseModel):
+    id: int | None = None
     id_project: int
     resolution: str
     luminosidad_promedio: float
