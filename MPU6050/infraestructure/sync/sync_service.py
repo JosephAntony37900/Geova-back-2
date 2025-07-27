@@ -15,17 +15,15 @@ async def sync_mpu_pending_data(local_session_factory, remote_session_factory, i
                 for doc in unsynced:
                     try:
                         async with remote_session_factory() as remote:
-                            # Crear nuevo objeto sin el id para evitar conflictos
                             doc_dict = doc.as_dict()
-                            doc_dict.pop('id', None)  # Remover id si existe
+                            doc_dict.pop('id', None)
                             remote_model = SensorMPUModel(**doc_dict)
                             remote.add(remote_model)
                             await remote.commit()
 
-                        # Actualizar estado en local usando el ID específico
                         stmt_update = (
                             update(SensorMPUModel)
-                            .where(SensorMPUModel.id == doc.id)  # Usar ID específico
+                            .where(SensorMPUModel.id == doc.id)
                             .values(synced=True)
                         )
                         await local.execute(stmt_update)

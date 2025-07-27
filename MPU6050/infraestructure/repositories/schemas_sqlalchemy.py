@@ -22,6 +22,8 @@ class SensorMPUModel(Base):
     event = Column(Boolean, default=False)
     synced = Column(Boolean, default=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
+    is_dual_measurement = Column(Boolean, default=False, nullable=False)
+    measurement_count = Column(Integer, default=1, nullable=False)
 
     def as_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}

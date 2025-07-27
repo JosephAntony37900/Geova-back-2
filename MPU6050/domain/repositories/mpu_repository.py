@@ -13,7 +13,16 @@ class MPURepository(ABC):
     async def delete(self, project_id: int, online: bool): pass
 
     @abstractmethod
+    async def delete_by_id(self, record_id: int, online: bool): pass
+
+    @abstractmethod
     async def exists_by_project(self, project_id: int, online: bool): pass
 
     @abstractmethod
     async def get_by_project_id(self, project_id: int, online: bool): pass
+
+    @abstractmethod
+    async def has_any_record(self, project_id: int, online: bool): pass
+
+    @abstractmethod
+    async def get_by_id(self, record_id: int, online: bool): pass
