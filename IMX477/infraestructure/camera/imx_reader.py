@@ -9,22 +9,20 @@ logger = logging.getLogger(__name__)
 
 class IMXReader:
     def obtener_frame(self):
-        """Captura un frame usando rpicam-still en lugar de libcamera-still."""
         try:
-            # Cambio de libcamera-still a rpicam-still
             result = subprocess.run([
                 "rpicam-still", 
-                "-n",  # No preview
+                "-n",
                 "--output", "/dev/shm/frame.jpg", 
-                "-t", "100",  # Timeout 100ms
+                "-t", "100",
                 "--width", "640", 
                 "--height", "480",
-                "--quality", "90",  # Calidad JPEG
-                "--encoding", "jpg"  # Asegurar encoding JPEG
+                "--quality", "90",
+                "--encoding", "jpg"
             ], 
             stdout=subprocess.DEVNULL, 
             stderr=subprocess.DEVNULL,
-            timeout=5  # Timeout de 5 segundos
+            timeout=5
             )
             
             if result.returncode != 0:
@@ -45,7 +43,6 @@ class IMXReader:
             return None
 
     def calcular_luminosidad(self, img):
-        """Calcula la luminosidad promedio del frame."""
         try:
             gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             return float(np.mean(gris))
@@ -54,7 +51,6 @@ class IMXReader:
             return 0.0
 
     def calcular_nitidez(self, img):
-        """Calcula la nitidez usando el operador Laplaciano."""
         try:
             gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             laplaciano = cv2.Laplacian(gris, cv2.CV_64F)
@@ -64,21 +60,17 @@ class IMXReader:
             return 0.0
 
     def detectar_laser(self, img):
-        """Detecta si hay un láser rojo en la imagen."""
         try:
             hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
             
-            # Rango para detectar rojo en HSV
             rojo_bajo = np.array([0, 100, 100])
             rojo_alto = np.array([10, 255, 255])
             mascara1 = cv2.inRange(hsv, rojo_bajo, rojo_alto)
             
-            # Segundo rango para rojo (que está en el otro extremo del espectro HSV)
             rojo_bajo2 = np.array([160, 100, 100])
             rojo_alto2 = np.array([180, 255, 255])
             mascara2 = cv2.inRange(hsv, rojo_bajo2, rojo_alto2)
             
-            # Combinar ambas máscaras
             mascara = mascara1 + mascara2
             
             contornos, _ = cv2.findContours(mascara, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -114,13 +106,11 @@ class IMXReader:
             return 0.0
 
     def read(self):
-        """Lee datos del sensor IMX477."""
         if platform.system() == "Windows":
             logger.warning("📵 IMX477 no disponible en Windows.")
             return None
 
         try:
-            # Capturar frame
             frame = self.obtener_frame()
             if frame is None:
                 logger.error("No se pudo obtener frame de la cámara")
