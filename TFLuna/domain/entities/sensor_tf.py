@@ -1,6 +1,6 @@
-#TFLuna/domain/entities/sensor_tf.py
 from datetime import datetime
 from pydantic import BaseModel
+from typing import Optional
 
 class SensorTFLuna(BaseModel):
     id: int | None = None
@@ -11,3 +11,7 @@ class SensorTFLuna(BaseModel):
     temperatura: float
     event: bool = True
     timestamp: datetime = datetime.utcnow()
+    is_dual_measurement: bool = False
+    measurement_count: int = 1
+    total_distance_cm: Optional[int] = None
+    total_distance_m: Optional[float] = None
