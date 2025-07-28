@@ -4,31 +4,42 @@ from HCSR04.infraestructure.repositories.schemas_sqlalchemy import SensorHCModel
 import asyncio
 
 async def sync_hc_pending_data(local_session_factory, remote_session_factory, is_connected_fn):
-    while True:
+    try:
         if await is_connected_fn():
             async with local_session_factory() as local:
                 stmt = select(SensorHCModel).where(SensorHCModel.synced == False)
                 result = await local.execute(stmt)
                 unsynced = result.scalars().all()
 
-                print(f"🕒 HC Pendientes: {len(unsynced)}")
-                for doc in unsynced:
+                print(f"🕒 HC-SR04 Pendientes: {len(unsynced)}")
+                
+                for record in unsynced:
                     try:
                         async with remote_session_factory() as remote:
-                            remote.add(SensorHCModel(**doc.as_dict()))
+                            record_dict = record.as_dict()
+                            record_dict.pop('id', None)
+                            record_dict['synced'] = True
+                            
+                            remote_model = SensorHCModel(**record_dict)
+                            remote.add(remote_model)
                             await remote.commit()
 
-                        # Actualizar estado en local
                         stmt_update = (
                             update(SensorHCModel)
-                            .where(SensorHCModel.id_project == doc.id_project)
+                            .where(SensorHCModel.id == record.id)
                             .values(synced=True)
                         )
                         await local.execute(stmt_update)
                         await local.commit()
-                        print(f"HC Sincronizado: {doc.id_project}")
+                        
+                        print(f"✅ HC-SR04 Sincronizado: ID {record.id}, Proyecto {record.id_project}")
+                        
                     except Exception as e:
-                        print(f"Error al sincronizar HC: {e}")
+                        print(f"❌ Error al sincronizar HC-SR04 ID {record.id}: {e}")
         else:
-            print("🔌 HC Sin conexión: solo guardando localmente.")
-        await asyncio.sleep(10)
+            print("🔌 HC-SR04: Sin conexión - solo guardando localmente.")
+            
+    except Exception as e:
+        print(f"❌ Error general en sync HC-SR04: {e}")
+    
+    await asyncio.sleep(5)
