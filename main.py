@@ -1,6 +1,4 @@
 # main.py
-import logging
-import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -43,7 +41,6 @@ from HCSR04.infraestructure.ws.ws_manager import ws_manager_hc
 local_session = get_local_engine()
 remote_session = get_remote_engine()
 rabbitmq_config = get_rabbitmq_config()
-logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -78,142 +75,60 @@ async def lifespan(app: FastAPI):
         print("🔌 Sin conexión: se omitió la creación de tablas remotas")
 
     async def tf_task():
-        """Tarea corregida para el sensor TF-Luna"""
-        consecutive_no_data = 0
-        message_count = 0
-        
-        while True:
-            try:
-                # Verificar conectividad
-                internet_available = await is_connected()
-                print(f"🌐 TF-Luna task - Internet: {'Available' if internet_available else 'Offline'}")
-                
-                # Obtener datos del controlador
-                controller = app.state.tf_controller
-                if not controller:
-                    print("❌ TF-Luna controller no está disponible")
-                    await asyncio.sleep(5)
-                    continue
+            """
+            Tarea para leer datos del sensor TF-Luna y enviarlos via WebSocket
+            cuando no hay internet, o via RabbitMQ cuando hay conexión
+            """
+            consecutive_errors = 0
+            max_consecutive_errors = 5
+            error_sleep_time = 5
+            
+            while True:
+                try:
+                    internet_available = await is_connected()
+                    controller = app.state.tf_controller
+                    data = await controller.get_tf_data(event=False)
                     
-                # OBTENER DATOS DEL SENSOR
-                data = await controller.get_tf_data(event=False)
-                
-                if data:
-                    consecutive_no_data = 0
-                    message_count += 1
-                    
-                    # CONVERTIR A DICT AQUÍ - ESTE ES EL PUNTO CRÍTICO
-                    sensor_dict = data.dict()
-                    print(f"📡 TF-Luna DATA #{message_count}: {sensor_dict}")
-                    
-                    # Enviar por WebSocket solo si no hay internet
-                    if not internet_available:
-                        print(f"📤 Enviando datos del sensor por WebSocket...")
-                        print(f"🔍 Datos a enviar: {sensor_dict}")
+                    if data:
+                        print("📡 TF-Luna:", data.dict())
                         
-                        # ENVIAR EL DICT DEL SENSOR, NO EL OBJETO
-                        await ws_manager.send_data(sensor_dict)
-                        print("✅ Datos del sensor enviados por WebSocket")
+                        if not internet_available:
+                            # Sin internet: usar WebSocket como alternativa a RabbitMQ
+                            websocket_sent = await ws_manager.send_data(data.dict())
+                            
+                            if websocket_sent:
+                                print("📡 TF-Luna -> WebSocket (sin internet)")
+                            else:
+                                print("⚠️ TF-Luna: No se pudo enviar via WebSocket")
+                        else:
+                            # Con internet: usar RabbitMQ (lógica existente del controller)
+                            print("📡 TF-Luna -> RabbitMQ (con internet)")
+                            # Aquí podrías añadir lógica específica para RabbitMQ si es necesario
+                            # Por ejemplo: await controller.send_to_rabbitmq(data)
                     else:
-                        print("🌐 Internet disponible - No enviando por WebSocket")
-                else:
-                    consecutive_no_data += 1
-                    print(f"📡 TF-Luna: Sin datos (consecutivo: {consecutive_no_data})")
+                        print("📡 TF-Luna: Sin datos del sensor")
                     
-                    # Si no hay datos por mucho tiempo, revisar el sensor
-                    if consecutive_no_data >= 10:
-                        print("❌ TF-Luna: Sin datos por 10 segundos consecutivos")
-                        
-            except Exception as e:
-                import traceback
-                print(f"❌ Error en TF-Luna task: {str(e)}")
-                print(f"📋 Traceback:\n{traceback.format_exc()}")
+                    # Reset contador de errores si todo va bien
+                    consecutive_errors = 0
+                    
+                except Exception as e:
+                    consecutive_errors += 1
+                    import traceback
+                    print(f"❌ Error en TF-Luna (intento {consecutive_errors}/{max_consecutive_errors}):")
+                    print(f"Error: {str(e)}")
+                    traceback.print_exc()
+                    
+                    # Si hay muchos errores consecutivos, esperar más tiempo
+                    if consecutive_errors >= max_consecutive_errors:
+                        print(f"⚠️ TF-Luna: Demasiados errores, esperando {error_sleep_time * 2}s...")
+                        await asyncio.sleep(error_sleep_time * 2)
+                        consecutive_errors = 0  # Reset después de la pausa larga
+                    else:
+                        await asyncio.sleep(error_sleep_time)
+                        continue
                 
-            await asyncio.sleep(1)
-
-    async def test_sensor_data_flow():
-        """Función para probar el flujo completo de datos"""
-        try:
-            print("🧪 === TEST DEL FLUJO DE DATOS ===")
-            
-            # 1. Obtener datos del controlador
-            controller = app.state.tf_controller
-            if not controller:
-                print("❌ Controller no disponible")
-                return
-                
-            # 2. Obtener datos del sensor
-            sensor_data = await controller.get_tf_data(event=False)
-            if not sensor_data:
-                print("❌ No hay datos del sensor")
-                return
-                
-            print(f"✅ Datos del sensor obtenidos: {type(sensor_data)}")
-            
-            # 3. Convertir a dict
-            sensor_dict = sensor_data.dict()
-            print(f"✅ Dict del sensor: {sensor_dict}")
-            
-            # 4. Verificar campos esperados
-            expected_fields = ['distancia_cm', 'distancia_m', 'temperatura', 'fuerza_senal', 'id_project']
-            available_fields = list(sensor_dict.keys())
-            print(f"📋 Campos disponibles: {available_fields}")
-            
-            missing_fields = [field for field in expected_fields if field not in available_fields]
-            if missing_fields:
-                print(f"⚠️ Campos faltantes: {missing_fields}")
-            else:
-                print("✅ Todos los campos esperados están presentes")
-                
-            # 5. Probar envío por WebSocket
-            print("📤 Probando envío por WebSocket...")
-            await ws_manager.send_data(sensor_dict)
-            print("✅ Envío completado")
-            
-            return sensor_dict
-            
-        except Exception as e:
-            import traceback
-            print(f"❌ Error en test: {str(e)}")
-            print(f"📋 Traceback:\n{traceback.format_exc()}")
-            return None
-
-    async def diagnose_tf_system():
-        """Función de diagnóstico para el sistema TF-Luna"""
-        try:
-            # Verificar estado del controlador
-            controller = app.state.tf_controller
-            if not controller:
-                return {"error": "Controller no disponible"}
-                
-            # Verificar conectividad
-            internet = await is_connected()
-            
-            # Verificar WebSocket
-            ws_stats = ws_manager.get_stats()
-            
-            # Intentar obtener datos
-            data = await controller.get_tf_data(event=False)
-            
-            diagnosis = {
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "controller_available": controller is not None,
-                "internet_available": internet,
-                "websocket_stats": ws_stats,
-                "sensor_data_available": data is not None,
-                "sensor_data": data.dict() if data else None
-            }
-            
-            logger.info(f"🔍 TF-Luna Diagnosis: {diagnosis}")
-            return diagnosis
-            
-        except Exception as e:
-            error_diagnosis = {
-                "error": str(e),
-                "timestamp": datetime.datetime.utcnow().isoformat()
-            }
-            logger.error(f"❌ Error en diagnóstico: {error_diagnosis}")
-            return error_diagnosis
+                # Intervalo normal entre lecturas
+                await asyncio.sleep(1)
 
     async def imx_task():
         while True:
@@ -439,6 +354,7 @@ async def health_check():
     }
 
 if __name__ == "__main__":
+    
     uvicorn.run(
         "main:app", 
         host="0.0.0.0",
