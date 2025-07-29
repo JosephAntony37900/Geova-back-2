@@ -87,3 +87,103 @@ async def get_tf_diagnosis(request: Request):
 async def get_websocket_stats(request: Request):
     """Endpoint para obtener estadísticas del WebSocket"""
     return ws_manager.get_stats()
+
+# Agregar esta ruta a routes_tf.py para debugging
+
+@router.get("/tfluna/debug/data-structure")
+async def get_data_structure_debug(request: Request):
+    """Debug: Ver la estructura exacta de los datos que se envían"""
+    try:
+        controller = request.app.state.tf_controller
+        
+        # Obtener datos del sensor
+        sensor_data = await controller.get_tf_data(event=False)
+        
+        if not sensor_data:
+            return {
+                "error": "No hay datos del sensor disponibles",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        
+        # Convertir a dict como lo hace el WebSocket
+        sensor_dict = sensor_data.dict()
+        
+        # Simular el enhanced_data que se envía por WebSocket
+        enhanced_data = {
+            **sensor_dict,
+            "message_id": 999,
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "sensor_data",
+            "sensor_type": "TF-Luna",
+            "total_connections": 1
+        }
+        
+        return {
+            "raw_sensor_object": str(sensor_data),
+            "sensor_dict": sensor_dict,
+            "enhanced_data_sent_via_websocket": enhanced_data,
+            "field_types": {
+                field: type(value).__name__ 
+                for field, value in sensor_dict.items()
+            },
+            "available_fields": list(sensor_dict.keys()),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "error": f"Error obteniendo estructura: {str(e)}",
+            "traceback": traceback.format_exc(),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.get("/tfluna/debug/compare-data")
+async def compare_data_formats(request: Request):
+    """Comparar datos del sensor vs datos enviados por WebSocket"""
+    try:
+        controller = request.app.state.tf_controller
+        
+        # Obtener datos como HTTP
+        http_data = await controller.get_tf_data(event=False)
+        
+        if not http_data:
+            return {"error": "No hay datos disponibles"}
+        
+        # Simular el procesamiento del WebSocket
+        ws_data = {
+            **http_data.dict(),
+            "message_id": 999,
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "sensor_data",
+            "sensor_type": "TF-Luna"
+        }
+        
+        return {
+            "http_endpoint_data": http_data.dict(),
+            "websocket_data": ws_data,
+            "differences": {
+                "additional_fields_in_ws": [
+                    key for key in ws_data.keys() 
+                    if key not in http_data.dict().keys()
+                ],
+                "missing_fields_in_ws": [
+                    key for key in http_data.dict().keys() 
+                    if key not in ws_data.keys()
+                ]
+            },
+            "sample_frontend_access": {
+                "distancia_cm": f"data.distancia_cm = {ws_data.get('distancia_cm', 'undefined')}",
+                "distancia_m": f"data.distancia_m = {ws_data.get('distancia_m', 'undefined')}",
+                "temperatura": f"data.temperatura = {ws_data.get('temperatura', 'undefined')}",
+                "fuerza_senal": f"data.fuerza_senal = {ws_data.get('fuerza_senal', 'undefined')}",
+                "id_project": f"data.id_project = {ws_data.get('id_project', 'undefined')}"
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        return {
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
