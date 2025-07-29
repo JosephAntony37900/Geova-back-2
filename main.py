@@ -1,4 +1,6 @@
 # main.py
+import logging
+import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -41,6 +43,7 @@ from HCSR04.infraestructure.ws.ws_manager import ws_manager_hc
 local_session = get_local_engine()
 remote_session = get_remote_engine()
 rabbitmq_config = get_rabbitmq_config()
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -75,19 +78,96 @@ async def lifespan(app: FastAPI):
         print("🔌 Sin conexión: se omitió la creación de tablas remotas")
 
     async def tf_task():
+        """Tarea mejorada para el sensor TF-Luna con debugging detallado"""
+        consecutive_no_data = 0
+        message_count = 0
+        
         while True:
             try:
+                # Verificar conectividad
                 internet_available = await is_connected()
+                logger.info(f"🌐 TF-Luna task - Internet: {'Available' if internet_available else 'Offline'}")
+                
+                # Obtener datos del controlador
                 controller = app.state.tf_controller
+                if not controller:
+                    logger.error("❌ TF-Luna controller no está disponible")
+                    await asyncio.sleep(5)
+                    continue
+                    
                 data = await controller.get_tf_data(event=False)
-                print("📡 TF-Luna:", data.dict() if data else "Sin datos")
-                if not internet_available and data:
-                    await ws_manager.send_data(data.dict())
-            except Exception:
+                
+                if data:
+                    consecutive_no_data = 0
+                    message_count += 1
+                    logger.info(f"📡 TF-Luna DATA #{message_count}: {data.dict()}")
+                    
+                    # Enviar por WebSocket solo si no hay internet
+                    if not internet_available:
+                        ws_stats = ws_manager.get_stats()
+                        logger.info(f"📤 Enviando a WebSocket - Conexiones activas: {ws_stats['active_connections']}")
+                        
+                        if ws_stats['active_connections'] > 0:
+                            await ws_manager.send_data(data.dict())
+                            logger.info("✅ Datos enviados por WebSocket")
+                        else:
+                            logger.warning("⚠️ No hay conexiones WebSocket activas")
+                    else:
+                        logger.info("🌐 Internet disponible - No enviando por WebSocket")
+                else:
+                    consecutive_no_data += 1
+                    logger.warning(f"📡 TF-Luna: Sin datos (consecutivo: {consecutive_no_data})")
+                    
+                    # Si no hay datos por mucho tiempo, revisar el sensor
+                    if consecutive_no_data >= 10:
+                        logger.error("❌ TF-Luna: Sin datos por 10 segundos consecutivos")
+                        # Aquí podrías reinicializar el sensor o hacer algún diagnóstico
+                        
+            except Exception as e:
                 import traceback
-                print("❌ Error en TF-Luna:")
-                traceback.print_exc()
+                logger.error(f"❌ Error en TF-Luna task: {str(e)}")
+                logger.error(f"📋 Traceback:\n{traceback.format_exc()}")
+                
             await asyncio.sleep(1)
+
+    # También agrega esta función de diagnóstico
+    async def diagnose_tf_system():
+        """Función de diagnóstico para el sistema TF-Luna"""
+        try:
+            # Verificar estado del controlador
+            controller = app.state.tf_controller
+            if not controller:
+                return {"error": "Controller no disponible"}
+                
+            # Verificar conectividad
+            internet = await is_connected()
+            
+            # Verificar WebSocket
+            ws_stats = ws_manager.get_stats()
+            
+            # Intentar obtener datos
+            data = await controller.get_tf_data(event=False)
+            
+            diagnosis = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "controller_available": controller is not None,
+                "internet_available": internet,
+                "websocket_stats": ws_stats,
+                "sensor_data_available": data is not None,
+                "sensor_data": data.dict() if data else None
+            }
+            
+            logger.info(f"🔍 TF-Luna Diagnosis: {diagnosis}")
+            return diagnosis
+            
+        except Exception as e:
+            error_diagnosis = {
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            logger.error(f"❌ Error en diagnóstico: {error_diagnosis}")
+            return error_diagnosis
+
 
     async def imx_task():
         while True:

@@ -76,3 +76,14 @@ async def tf_luna_ws(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
+
+@router.get("/tfluna/debug/diagnosis")
+async def get_tf_diagnosis(request: Request):
+    """Endpoint para diagnóstico del sistema TF-Luna"""
+    diagnosis = await diagnose_tf_system()
+    return diagnosis
+
+@router.get("/tfluna/debug/websocket-stats")
+async def get_websocket_stats(request: Request):
+    """Endpoint para obtener estadísticas del WebSocket"""
+    return ws_manager.get_stats()
