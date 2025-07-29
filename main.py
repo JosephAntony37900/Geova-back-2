@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn, asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine
+import aiohttp
 
 from core.config import get_local_engine, get_remote_engine, get_rabbitmq_config
 from core.cors import setup_cors
@@ -12,7 +13,7 @@ from IMX477.infraestructure.sync.sync_service import sync_imx_pending_data
 from MPU6050.infraestructure.sync.sync_service import sync_mpu_pending_data
 from HCSR04.infraestructure.sync.sync_service import sync_hc_pending_data
 
-from TFLuna.infraestructure.dependencies import init_tf_dependencies, is_connected
+from TFLuna.infraestructure.dependencies import init_tf_dependencies
 from IMX477.infraestructure.dependencies import init_imx_dependencies
 from MPU6050.infraestructure.dependencies import init_mpu_dependencies
 from HCSR04.infraestructure.dependencies import init_hc_dependencies
@@ -42,13 +43,19 @@ local_session = get_local_engine()
 remote_session = get_remote_engine()
 rabbitmq_config = get_rabbitmq_config()
 
+async def is_connected() -> bool:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://example.com", timeout=3) as response:
+                return response.status == 200
+    except Exception as e:
+        print(f"Error verificando conexión: {e}")
+        return False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    BLE_ADDRESS = "ESP32_SensorBLE" 
-    BLE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
     init_tf_dependencies(app, local_session, remote_session, rabbitmq_config)
-    init_imx_dependencies(app, local_session, remote_session, rabbitmq_config)
+    init_imx_dependencies(app, local_session, remote_session, rabbitmq_config, is_connected)
     init_mpu_dependencies(app, local_session, remote_session, rabbitmq_config, is_connected)
     init_hc_dependencies(
         app, 
@@ -69,10 +76,16 @@ async def lifespan(app: FastAPI):
 
     await create_tables(local_session.kw["bind"])
 
-    if await is_connected():
-        await create_tables(remote_session.kw["bind"])
+    connection_status = await is_connected()
+    
+    if connection_status:
+        try:
+            await create_tables(remote_session.kw["bind"])
+            print("Tablas remotas creadas/verificadas :)")
+        except Exception as e:
+            print(f"Error creando tablas remotas: {e}")
     else:
-        print("🔌 Sin conexión: se omitió la creación de tablas remotas")
+        print("🔌 Sin conexión: se omitió la creación de tablas remotas :(")
 
     async def tf_task():
         while True:
@@ -85,7 +98,7 @@ async def lifespan(app: FastAPI):
                     await ws_manager.send_data(data.dict())
             except Exception:
                 import traceback
-                print("❌ Error en TF-Luna:")
+                print("Error en TF-Luna:")
                 traceback.print_exc()
             await asyncio.sleep(1)
 
@@ -100,7 +113,7 @@ async def lifespan(app: FastAPI):
                     await ws_manager_imx.send_data(data.dict())
             except Exception:
                 import traceback
-                print("❌ Error en IMX477:")
+                print("Error en IMX477:")
                 traceback.print_exc()
             await asyncio.sleep(2)
 
@@ -115,7 +128,7 @@ async def lifespan(app: FastAPI):
                     await ws_manager_mpu.send_data(data.dict())
             except Exception:
                 import traceback
-                print("❌ Error en MPU6050:")
+                print("Error en MPU6050:")
                 traceback.print_exc()
             await asyncio.sleep(1)
 
@@ -128,134 +141,139 @@ async def lifespan(app: FastAPI):
         print("🔵 HC-SR04: Iniciando tarea de lectura BLE...")
         
         while connection_attempts < max_connection_attempts:
-               print(f"🔵 HC-SR04: Intento de conexión {connection_attempts + 1}/{max_connection_attempts}")
-               if await reader.connect():
-                     print("✅ HC-SR04: Conexión inicial establecida")
-                     break
-               else:
-                     connection_attempts += 1
-                     if connection_attempts < max_connection_attempts:
-                          print(f"❌ HC-SR04: Fallo de conexión, esperando 5s...")
-                          await asyncio.sleep(5)
+                print(f"🔵 HC-SR04: Intento de conexión {connection_attempts + 1}/{max_connection_attempts}")
+                if await reader.connect():
+                        print("HC-SR04: Conexión inicial establecida")
+                        break
+                else:
+                        connection_attempts += 1
+                        if connection_attempts < max_connection_attempts:
+                                print(f"HC-SR04: Fallo de conexión, esperando 5s...")
+                                await asyncio.sleep(5)
         
         if connection_attempts >= max_connection_attempts:
-               print("❌ HC-SR04: No se pudo establecer conexión inicial, reintentando cada 30s...")
+                print("HC-SR04: No se pudo establecer conexión inicial, reintentando cada 30s...")
         
         while True:
-               try:
-                     internet_available = await is_connected()
-                     
-                     if not reader.is_connected:
-                          print("🔵 HC-SR04: Sin conexión, intentando reconectar...")
-                          if await reader.connect():
-                                  print("✅ HC-SR04: Reconectado exitosamente")
-                          else:
-                                  print("❌ HC-SR04: Fallo de reconexión, esperando 10s...")
-                                  await asyncio.sleep(10)
-                                  continue
-                     
-                     if reader.client and not reader.client.is_connected:
-                          print("🔵 HC-SR04: Cliente desconectado, limpiando estado...")
-                          reader.is_connected = False
-                          await reader.disconnect()
-                          continue
-                     
-                     if reader.is_connected:
-                          data = await controller.get_hc_data(project_id=1, event=False)
+                try:
+                        internet_available = await is_connected()
+                        
+                        if not reader.is_connected:
+                                print("🔵 HC-SR04: Sin conexión, intentando reconectar...")
+                                if await reader.connect():
+                                        print("✅ HC-SR04: Reconectado exitosamente")
+                                else:
+                                        print("HC-SR04: Fallo de reconexión, esperando 10s...")
+                                        await asyncio.sleep(10)
+                                        continue
+                        
+                        if reader.client and not reader.client.is_connected:
+                                print("🔵 HC-SR04: Cliente desconectado, limpiando estado...")
+                                reader.is_connected = False
+                                await reader.disconnect()
+                                continue
+                        
+                        if reader.is_connected:
+                                data = await controller.get_hc_data(project_id=1, event=False)
 
-                          if data:
-                                  print(f"🔵 HC-SR04 BLE: {data.distancia_cm} cm")
-                                  
-                                  if not internet_available:
-                                         await ws_manager_hc.send_data(data.dict())
-                          else:
-                                  print("🔵 HC-SR04: No hay datos disponibles")
-                                                    
-               except asyncio.CancelledError:
-                     print("🛑 HC-SR04: Tarea cancelada")
-                     break
-               except KeyboardInterrupt:
-                     print("🛑 HC-SR04: Interrupción por teclado")
-                     break
-               except Exception as e:
-                     import traceback
-                     print("❌ Error en HC-SR04:")
-                     print(f"Error: {e}")
-                     traceback.print_exc()
-                     
-                     try:
-                          if reader.is_connected:
-                                  await reader.disconnect()
-                     except:
-                          pass
-                          
-               await asyncio.sleep(2)
+                                if data:
+                                        print(f"🔵 HC-SR04 BLE: {data.distancia_cm} cm")
+                                        
+                                        if not internet_available:
+                                                await ws_manager_hc.send_data(data.dict())
+                                else:
+                                        print("🔵 HC-SR04: Sin datos del ESP32 (posiblemente apagado)")
+                                        
+                                        if reader.client and not reader.client.is_connected:
+                                                print("🔵 HC-SR04: Conexión BLE perdida, desconectando...")
+                                                reader.is_connected = False
+                                                await reader.disconnect()
+                                                                                
+                except asyncio.CancelledError:
+                        print("HC-SR04: Tarea cancelada")
+                        break
+                except KeyboardInterrupt:
+                        print("HC-SR04: Interrupción por teclado")
+                        break
+                except Exception as e:
+                        import traceback
+                        print("Error en HC-SR04:")
+                        print(f"Error: {e}")
+                        traceback.print_exc()
+                        
+                        try:
+                                if reader.is_connected:
+                                        await reader.disconnect()
+                        except:
+                                pass
+                                                
+                await asyncio.sleep(2)
         
         try:
-               if reader.is_connected:
-                     await reader.disconnect()
-                     print("🔵 HC-SR04: Desconectado al finalizar tarea")
+                if reader.is_connected:
+                        await reader.disconnect()
+                        print("🔵 HC-SR04: Desconectado al finalizar tarea")
         except:
-               pass
+                pass
 
     async def sync_tf():
-        print("🔄 Iniciando sincronización TF-Luna...")
+        print("Iniciando sincronización TF-Luna...")
         while True:
             try:
                 if await is_connected():
                     await sync_tf_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
-                print(f"❌ Error en sync TF-Luna: {e}")
+                print(f"Error en sync TF-Luna: {e}")
                 await asyncio.sleep(30)
 
     async def sync_imx():
-        print("🔄 Iniciando sincronización IMX477...")
+        print("Iniciando sincronización IMX477...")
         while True:
             try:
                 if await is_connected():
                     await sync_imx_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
-                print(f"❌ Error en sync IMX477: {e}")
+                print(f"Error en sync IMX477: {e}")
                 await asyncio.sleep(30)
 
     async def sync_mpu():
-        print("🔄 Iniciando sincronización MPU6050...")
+        print("Iniciando sincronización MPU6050...")
         while True:
             try:
                 if await is_connected():
                     await sync_mpu_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
-                print(f"❌ Error en sync MPU6050: {e}")
+                print(f"Error en sync MPU6050: {e}")
                 await asyncio.sleep(30)
 
     async def sync_hc():
-        print("🔄 Iniciando sincronización HC-SR04...")
+        print("Iniciando sincronización HC-SR04...")
         while True:
             try:
                 if await is_connected():
                     await sync_hc_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
-                print(f"❌ Error en sync HC-SR04: {e}")
+                print(f"Error en sync HC-SR04: {e}")
                 await asyncio.sleep(30)
 
-    print("📡 Creando tareas de sensores...")
+    print("Creando tareas de sensores...")
     asyncio.create_task(tf_task())
     asyncio.create_task(imx_task())
     asyncio.create_task(mpu_task())
     asyncio.create_task(hc_task())
 
-    print("🔄 Creando tareas de sincronización...")
+    print("Creando tareas de sincronización...")
     asyncio.create_task(sync_tf())
     asyncio.create_task(sync_imx())
     asyncio.create_task(sync_mpu())
     asyncio.create_task(sync_hc())
     print("📷 Streaming de IMX477 listo para usar")
     yield
-    print("🛑 Cerrando aplicación...")
+    print("Cerrando aplicación...")
 
 app = FastAPI(
     title="Raspberry Pi Sensor API",
@@ -320,29 +338,29 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    # Importar aquí para evitar dependencias circulares
     from IMX477.infraestructure.streaming.streamer import Streamer
     
-    # Crear instancia temporal para check de estado
     temp_streamer = Streamer()
     streaming_status = temp_streamer.get_status()
+    
+    connection_status = await is_connected()
     
     return {
         "status": "healthy",
         "timestamp": "2025-01-15T12:00:00Z",
         "services": {
-            "database": "connected" if await is_connected() else "local_only",
+            "database": "connected" if connection_status else "local_only",
             "sensors": "active",
             "streaming": {
                 "available": True,
                 "active": streaming_status["active"],
                 "fps": streaming_status["fps"]
-            }
+            },
+            "internet": "connected" if connection_status else "disconnected"
         }
     }
 
 if __name__ == "__main__":
-    
     uvicorn.run(
         "main:app", 
         host="0.0.0.0",

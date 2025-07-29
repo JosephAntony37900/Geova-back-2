@@ -15,17 +15,15 @@ async def sync_tf_pending_data(local_session_factory, remote_session_factory, is
                 for doc in unsynced:
                     try:
                         async with remote_session_factory() as remote:
-                            # Crear nuevo objeto sin el id para evitar conflictos
                             doc_dict = doc.as_dict()
-                            doc_dict.pop('id', None)  # ✅ Remover id para remote
+                            doc_dict.pop('id', None)
                             remote_model = SensorTFModel(**doc_dict)
                             remote.add(remote_model)
                             await remote.commit()
 
-                        # ✅ CORRECCIÓN: Actualizar por ID específico, no por project_id
                         stmt_update = (
                             update(SensorTFModel)
-                            .where(SensorTFModel.id == doc.id)  # ✅ ID específico
+                            .where(SensorTFModel.id == doc.id)
                             .values(synced=True)
                         )
                         await local.execute(stmt_update)

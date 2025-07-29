@@ -5,21 +5,13 @@ from IMX477.infraestructure.mqtt.publisher import RabbitMQPublisher
 from IMX477.application.sensor_imx import IMXUseCase
 from IMX477.infraestructure.controllers.controller_imx import IMXController
 from IMX477.infraestructure.repositories.imx_repo_dual import DualIMXRepository
-import aiohttp
-
-async def is_connected() -> bool:
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://www.google.com", timeout=2) as response:
-                return response.status == 200
-    except Exception:
-        return False
 
 def init_imx_dependencies(
     app: FastAPI,
     session_local_factory,
     session_remote_factory,
-    rabbitmq_config: dict
+    rabbitmq_config: dict,
+    is_connected_fn
 ):
     reader = IMXReader()
     repository = DualIMXRepository(session_local_factory, session_remote_factory)
@@ -29,6 +21,7 @@ def init_imx_dependencies(
         password=rabbitmq_config["pass"],
         routing_key=rabbitmq_config["routing_key_imx"]
     )
-    usecase = IMXUseCase(reader, repository, publisher, is_connected)
+    
+    usecase = IMXUseCase(reader, repository, publisher, is_connected_fn)
     controller = IMXController(usecase)
     app.state.imx_controller = controller

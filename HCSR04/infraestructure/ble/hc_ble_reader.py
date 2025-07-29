@@ -1,6 +1,7 @@
 # HCSR04/infraestructure/ble/hc_ble_reader.py
 import asyncio
 import json
+import time
 from bleak import BleakClient, BleakScanner
 from HCSR04.domain.ports.ble_reader import BLEReader
 
@@ -14,7 +15,6 @@ class HCBLEReader(BLEReader):
         self.is_connected = False
 
     async def discover_device(self):
-        """Descubre el dispositivo ESP32 - igual que tu código de prueba"""
         try:
             print("🔎 Escaneando dispositivos BLE...")
             devices = await BleakScanner.discover(timeout=10.0)
@@ -33,20 +33,18 @@ class HCBLEReader(BLEReader):
             return False
 
     def _notification_handler(self, sender, data):
-        """Handler de notificaciones - igual que tu código de prueba"""
         try:
             raw_data = data.decode('utf-8')
             print(f"📩 Notificación recibida: {raw_data}")
             
             json_data = json.loads(raw_data)
             
-            # El ESP32 envía: {"distance": 123.45, "count": 5}
             distance = json_data.get('distance')
             
             if distance is not None and distance > 0:
-                # Almacenar con el formato esperado por HCSensorData
                 self.latest_data = {
-                    "distancia_cm": float(distance)
+                    "distancia_cm": float(distance),
+                    "timestamp": time.time()
                 }
                 print(f"📩 HC-SR04 BLE: {distance} cm")
             elif distance is None:
@@ -61,13 +59,10 @@ class HCBLEReader(BLEReader):
             print(f"🔵 HC-SR04 BLE: Error inesperado - {e}")
 
     async def connect(self):
-        """Conecta al ESP32 - usando EXACTAMENTE la misma lógica que tu código de prueba"""
         try:
-            # Siempre buscar el dispositivo primero
             if not await self.discover_device():
                 return False
 
-            # Desconectar cliente anterior si existe
             if self.client:
                 try:
                     if self.client.is_connected:
@@ -76,16 +71,13 @@ class HCBLEReader(BLEReader):
                     pass
                 self.client = None
 
-            # Crear nuevo cliente
             self.client = BleakClient(self.device_address)
             
-            # Conectar
             await self.client.connect()
             
             if self.client.is_connected:
                 print("🔗 Conectado con la ESP32")
                 
-                # Iniciar notificaciones
                 await self.client.start_notify(self.char_uuid, self._notification_handler)
                 print("🎧 Escuchando datos BLE...")
                 
@@ -107,7 +99,6 @@ class HCBLEReader(BLEReader):
             return False
 
     async def disconnect(self):
-        """Desconecta del ESP32"""
         try:
             if self.client and self.client.is_connected:
                 await self.client.stop_notify(self.char_uuid)
@@ -118,24 +109,29 @@ class HCBLEReader(BLEReader):
         finally:
             self.is_connected = False
             self.client = None
+            self.latest_data = None
 
     async def read_async(self) -> dict | None:
-        """Lee datos del sensor"""
-        # Si no está conectado, intentar conectar
         if not self.is_connected:
             if not await self.connect():
                 print("🔵 HC-SR04: Sin conexión a la ESP32, sin datos")
                 return None
         
-        # Verificar si la conexión sigue activa
         if self.client and not self.client.is_connected:
             print("🔵 HC-SR04: Conexión perdida con ESP32")
             self.is_connected = False
             return None
             
-        # Retornar datos si están disponibles
         if self.latest_data:
-            return self.latest_data.copy()
+            current_time = time.time()
+            data_age = current_time - self.latest_data.get("timestamp", 0)
+            
+            if data_age > 5.0:
+                print("🔵 HC-SR04: Datos obsoletos, ESP32 podría estar desconectado")
+                self.latest_data = None
+                return None
+            
+            return {"distancia_cm": self.latest_data["distancia_cm"]}
         
         return None
 
