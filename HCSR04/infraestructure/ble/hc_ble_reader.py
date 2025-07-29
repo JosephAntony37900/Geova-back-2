@@ -14,11 +14,13 @@ class HCBLEReader(BLEReader):
         self.is_connected = False
 
     async def discover_device(self):
+        """Descubre el dispositivo ESP32 - igual que tu código de prueba"""
         try:
             print("🔎 Escaneando dispositivos BLE...")
             devices = await BleakScanner.discover(timeout=10.0)
             
             for device in devices:
+                print(f"🔍 Dispositivo encontrado: {device.name} | {device.address}")
                 if device.name == self.device_name:
                     self.device_address = device.address
                     print(f"✅ ESP32 encontrada: {device.name} | {device.address}")
@@ -30,46 +32,23 @@ class HCBLEReader(BLEReader):
             print(f"🔵 HC-SR04 BLE: Error en descubrimiento - {e}")
             return False
 
-    async def connect(self):
-        if not self.device_address:
-            if not await self.discover_device():
-                return False
-
-        try:
-            self.client = BleakClient(self.device_address)
-            await self.client.connect()
-            
-            if self.client.is_connected:
-                await self.client.start_notify(self.char_uuid, self._notification_handler)
-                self.is_connected = True
-                print("🔗 Conectado con ESP32 HC-SR04")
-                return True
-            else:
-                print("❌ No se pudo conectar a la ESP32")
-                return False
-                
-        except Exception as e:
-            print(f"🔵 HC-SR04 BLE: Error de conexión - {e}")
-            self.is_connected = False
-            return False
-
     def _notification_handler(self, sender, data):
+        """Handler de notificaciones - igual que tu código de prueba"""
         try:
             raw_data = data.decode('utf-8')
-            print(f"🔍 HC-SR04 BLE datos crudos: {raw_data}")
+            print(f"📩 Notificación recibida: {raw_data}")
             
             json_data = json.loads(raw_data)
             
-            # Tu ESP32 envía: {"distance": 123.45, "count": 5}
+            # El ESP32 envía: {"distance": 123.45, "count": 5}
             distance = json_data.get('distance')
-            lap_count = json_data.get('count', 0)
             
             if distance is not None and distance > 0:
+                # Almacenar con el formato esperado por HCSensorData
                 self.latest_data = {
-                    "distancia_cm": float(distance),
-                    "vueltas": int(lap_count)
+                    "distancia_cm": float(distance)
                 }
-                print(f"📩 HC-SR04 BLE: {distance} cm | Vueltas: {lap_count}")
+                print(f"📩 HC-SR04 BLE: {distance} cm")
             elif distance is None:
                 print("📩 HC-SR04 BLE: Sin lectura del sensor (null)")
             else:
@@ -81,36 +60,87 @@ class HCBLEReader(BLEReader):
         except Exception as e:
             print(f"🔵 HC-SR04 BLE: Error inesperado - {e}")
 
+    async def connect(self):
+        """Conecta al ESP32 - usando EXACTAMENTE la misma lógica que tu código de prueba"""
+        try:
+            # Siempre buscar el dispositivo primero
+            if not await self.discover_device():
+                return False
+
+            # Desconectar cliente anterior si existe
+            if self.client:
+                try:
+                    if self.client.is_connected:
+                        await self.client.disconnect()
+                except:
+                    pass
+                self.client = None
+
+            # Crear nuevo cliente
+            self.client = BleakClient(self.device_address)
+            
+            # Conectar
+            await self.client.connect()
+            
+            if self.client.is_connected:
+                print("🔗 Conectado con la ESP32")
+                
+                # Iniciar notificaciones
+                await self.client.start_notify(self.char_uuid, self._notification_handler)
+                print("🎧 Escuchando datos BLE...")
+                
+                self.is_connected = True
+                return True
+            else:
+                print("❌ No se pudo conectar a la ESP32.")
+                return False
+                
+        except Exception as e:
+            print(f"🔵 HC-SR04 BLE: Error de conexión - {e}")
+            self.is_connected = False
+            if self.client:
+                try:
+                    await self.client.disconnect()
+                except:
+                    pass
+                self.client = None
+            return False
+
     async def disconnect(self):
-        if self.client and self.client.is_connected:
-            try:
+        """Desconecta del ESP32"""
+        try:
+            if self.client and self.client.is_connected:
                 await self.client.stop_notify(self.char_uuid)
                 await self.client.disconnect()
                 print("🔵 HC-SR04 BLE: Desconectado")
-            except Exception as e:
-                print(f"🔵 HC-SR04 BLE: Error al desconectar - {e}")
-        
-        self.is_connected = False
-        self.client = None
+        except Exception as e:
+            print(f"🔵 HC-SR04 BLE: Error al desconectar - {e}")
+        finally:
+            self.is_connected = False
+            self.client = None
 
     async def read_async(self) -> dict | None:
+        """Lee datos del sensor"""
+        # Si no está conectado, intentar conectar
         if not self.is_connected:
             if not await self.connect():
                 print("🔵 HC-SR04: Sin conexión a la ESP32, sin datos")
                 return None
         
+        # Verificar si la conexión sigue activa
         if self.client and not self.client.is_connected:
-            self.is_connected = False
             print("🔵 HC-SR04: Conexión perdida con ESP32")
+            self.is_connected = False
             return None
             
+        # Retornar datos si están disponibles
         if self.latest_data:
-            data = self.latest_data.copy()
-            return data
+            return self.latest_data.copy()
         
         return None
 
     def read(self) -> dict | None:
+        """Método sincrónico"""
         try:
             try:
                 loop = asyncio.get_running_loop()

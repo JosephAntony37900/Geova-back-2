@@ -122,52 +122,81 @@ async def lifespan(app: FastAPI):
     async def hc_task():
         controller = app.state.hc_controller
         reader = controller.usecase.reader
-        connection_retries = 0
-        max_retries = 3
+        connection_attempts = 0
+        max_connection_attempts = 5
+        
+        print("🔵 HC-SR04: Iniciando tarea de lectura BLE...")
+        
+        while connection_attempts < max_connection_attempts:
+               print(f"🔵 HC-SR04: Intento de conexión {connection_attempts + 1}/{max_connection_attempts}")
+               if await reader.connect():
+                     print("✅ HC-SR04: Conexión inicial establecida")
+                     break
+               else:
+                     connection_attempts += 1
+                     if connection_attempts < max_connection_attempts:
+                          print(f"❌ HC-SR04: Fallo de conexión, esperando 5s...")
+                          await asyncio.sleep(5)
+        
+        if connection_attempts >= max_connection_attempts:
+               print("❌ HC-SR04: No se pudo establecer conexión inicial, reintentando cada 30s...")
         
         while True:
-            try:
-                internet_available = await is_connected()
-                
-                if not reader.is_connected and connection_retries < max_retries:
-                    print(f"🔵 HC-SR04: Intentando conectar... (intento {connection_retries + 1})")
-                    if await reader.connect():
-                        connection_retries = 0
-                        print("✅ HC-SR04: Conexión BLE establecida")
-                    else:
-                        connection_retries += 1
-                        print(f"❌ HC-SR04: Fallo de conexión ({connection_retries}/{max_retries})")
-                        await asyncio.sleep(5)
-                        continue
-                
-                if connection_retries >= max_retries:
-                    print("🔵 HC-SR04: Máximo de reintentos alcanzado, esperando...")
-                    await asyncio.sleep(30)  # Wait longer before trying again
-                    connection_retries = 0
-                    continue
-                
-                data = await controller.get_hc_data(project_id=1, event=False)
+               try:
+                     internet_available = await is_connected()
+                     
+                     if not reader.is_connected:
+                          print("🔵 HC-SR04: Sin conexión, intentando reconectar...")
+                          if await reader.connect():
+                                  print("✅ HC-SR04: Reconectado exitosamente")
+                          else:
+                                  print("❌ HC-SR04: Fallo de reconexión, esperando 10s...")
+                                  await asyncio.sleep(10)
+                                  continue
+                     
+                     if reader.client and not reader.client.is_connected:
+                          print("🔵 HC-SR04: Cliente desconectado, limpiando estado...")
+                          reader.is_connected = False
+                          await reader.disconnect()
+                          continue
+                     
+                     if reader.is_connected:
+                          data = await controller.get_hc_data(project_id=1, event=False)
 
-                if data:
-                    print(f"🔵 HC-SR04 BLE: {data.distancia_cm} cm")
-                    if not internet_available:
-                        await ws_manager_hc.send_data(data.dict())
-                else:
-                    print("🔵 HC-SR04 BLE: Sin datos")
-                    if reader.is_connected:
-                        print("🔵 HC-SR04: Posible desconexión detectada")
-                        await reader.disconnect()
-                                
-            except Exception as e:
-                import traceback
-                print("❌ Error en HC-SR04:")
-                print(f"Error: {e}")
-                traceback.print_exc()
-                
-                if reader.is_connected:
-                    await reader.disconnect()
-                    
-            await asyncio.sleep(2)
+                          if data:
+                                  print(f"🔵 HC-SR04 BLE: {data.distancia_cm} cm")
+                                  
+                                  if not internet_available:
+                                         await ws_manager_hc.send_data(data.dict())
+                          else:
+                                  print("🔵 HC-SR04: No hay datos disponibles")
+                                                    
+               except asyncio.CancelledError:
+                     print("🛑 HC-SR04: Tarea cancelada")
+                     break
+               except KeyboardInterrupt:
+                     print("🛑 HC-SR04: Interrupción por teclado")
+                     break
+               except Exception as e:
+                     import traceback
+                     print("❌ Error en HC-SR04:")
+                     print(f"Error: {e}")
+                     traceback.print_exc()
+                     
+                     try:
+                          if reader.is_connected:
+                                  await reader.disconnect()
+                     except:
+                          pass
+                          
+               await asyncio.sleep(2)
+        
+        try:
+               if reader.is_connected:
+                     await reader.disconnect()
+                     print("🔵 HC-SR04: Desconectado al finalizar tarea")
+        except:
+               pass
 
     async def sync_tf():
         print("🔄 Iniciando sincronización TF-Luna...")

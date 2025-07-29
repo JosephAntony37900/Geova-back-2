@@ -15,20 +15,30 @@ class HCUseCase:
         try:
             raw = await self.reader.read_async()
             
-            if not raw:
+            if not raw or 'distancia_cm' not in raw:
                 return None
 
-            data = HCSensorData(id_project=project_id, event=event, **raw)
+            # Crear HCSensorData con los datos recibidos
+            data = HCSensorData(
+                id_project=project_id, 
+                distancia_cm=raw['distancia_cm'],
+                event=event
+            )
             
+            # Solo publicar a MQTT si hay conexión a internet
             try:
-                self.publisher.publish(data)
+                if await self.is_connected():
+                    self.publisher.publish(data)
+                    print(f"📡 HC-SR04: Publicado a MQTT - {data.distancia_cm} cm")
             except Exception as e:
                 print(f"🔵 HC-SR04: Error al publicar a MQTT - {e}")
             
+            # Solo guardar en BD si event=True
             if event:
                 try:
                     online = await self.is_connected()
                     await self.repository.save(data, online)
+                    print(f"💾 HC-SR04: Guardado en BD - {data.distancia_cm} cm")
                 except Exception as e:
                     print(f"🔵 HC-SR04: Error al guardar datos - {e}")
 
@@ -44,7 +54,11 @@ class HCUseCase:
 
         try:
             online = await self.is_connected()
-            self.publisher.publish(data)
+            
+            # Publicar a MQTT solo si hay conexión
+            if online:
+                self.publisher.publish(data)
+                
             await self.repository.save(data, online)
             return {"msg": "Datos guardados correctamente", "success": True}
         except Exception as e:
@@ -61,7 +75,10 @@ class HCUseCase:
         data.id_project = project_id
         
         try:
-            self.publisher.publish(data)
+            # Publicar a MQTT solo si hay conexión
+            if online:
+                self.publisher.publish(data)
+                
             await self.repository.update_all_by_project(project_id, data, online)
             return {"msg": "Datos HC-SR04 actualizados correctamente", "success": True}
         except Exception as e:
@@ -78,14 +95,16 @@ class HCUseCase:
         try:
             await self.repository.delete_all_by_project(project_id, online)
             
+            # Publicar evento de eliminación solo si hay conexión
             try:
-                temp_data = HCSensorData(
-                    id_project=project_id,
-                    distancia_cm=0,
-                    event=True
-                )
-                temp_data.__dict__["_action"] = "delete"
-                self.publisher.publish(temp_data)
+                if online:
+                    temp_data = HCSensorData(
+                        id_project=project_id,
+                        distancia_cm=0,
+                        event=True
+                    )
+                    temp_data.__dict__["_action"] = "delete"
+                    self.publisher.publish(temp_data)
             except Exception as e:
                 print(f"🔵 HC-SR04: Error publicando evento de eliminación - {e}")
             
