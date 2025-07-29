@@ -88,21 +88,101 @@ class IMXReader:
         """Calcula un score de calidad basado en luminosidad, nitidez y detección de láser."""
         try:
             # Normalizar luminosidad (0-255 -> 0-1)
-            lum_score = min(lum / 200, 1.0)
+            # Penalizar valores muy bajos o muy altos
+            if lum < 50:  # Muy oscuro
+                lum_score = lum / 50 * 0.5  # Máximo 0.5 para imágenes muy oscuras
+            elif lum > 200:  # Muy brillante (posible sobreexposición)
+                lum_score = max(0.3, 1.0 - (lum - 200) / 55 * 0.7)  # Reducir score gradualmente
+            else:  # Rango óptimo 50-200
+                lum_score = 0.5 + (lum - 50) / 150 * 0.5  # Score entre 0.5 y 1.0
             
-            # Normalizar nitidez (valores típicos 0-2000 -> 0-1)
-            nit_score = min(nit / 1000, 1.0)
+            # Normalizar nitidez con curva más realista
+            # Valores típicos: 0-100 (muy borroso), 100-500 (aceptable), 500+ (nítido)
+            if nit < 100:
+                nit_score = nit / 100 * 0.3  # Máximo 0.3 para imágenes muy borrosas
+            elif nit < 500:
+                nit_score = 0.3 + (nit - 100) / 400 * 0.5  # Score entre 0.3 y 0.8
+            else:
+                nit_score = min(1.0, 0.8 + (nit - 500) / 1000 * 0.2)  # Score entre 0.8 y 1.0
             
-            # Bonus por detección de láser
+            # Score de detección de láser
             laser_score = 1.0 if laser else 0.0
             
-            # Promedio ponderado
-            score = (lum_score * 0.4 + nit_score * 0.4 + laser_score * 0.2)
+            # Cálculo de probabilidad de confiabilidad más sofisticado
+            # Consideramos la combinación de factores
+            base_score = (lum_score * 0.35 + nit_score * 0.45 + laser_score * 0.20)
             
-            return round(score, 2)
+            # Bonus por combinaciones ideales
+            bonus = 0.0
+            if laser and lum_score > 0.7 and nit_score > 0.7:
+                bonus = 0.1  # Bonus por condiciones ideales
+            elif laser and (lum_score > 0.5 or nit_score > 0.5):
+                bonus = 0.05  # Bonus menor por condiciones parcialmente buenas
+            
+            # Penalización por combinaciones problemáticas
+            penalty = 0.0
+            if lum_score < 0.3 and nit_score < 0.3:
+                penalty = 0.2  # Penalización fuerte por imagen muy mala
+            elif lum_score < 0.5 and nit_score < 0.5 and not laser:
+                penalty = 0.1  # Penalización por condiciones generalmente malas
+            
+            # Score final
+            final_score = max(0.0, min(1.0, base_score + bonus - penalty))
+            
+            return round(final_score, 2)
             
         except Exception as e:
             logger.error(f"Error calculando score: {e}")
+            return 0.0
+
+    def calcular_probabilidad_confiabilidad(self, lum, nit, laser, calidad_base):
+        """
+        Calcula la probabilidad de confiabilidad considerando todos los factores.
+        """
+        try:
+            # Factor de luminosidad (0-1)
+            if 80 <= lum <= 180:  # Rango óptimo
+                factor_lum = 1.0
+            elif 50 <= lum <= 200:  # Rango aceptable
+                factor_lum = 0.8
+            elif lum < 30 or lum > 230:  # Muy malo
+                factor_lum = 0.2
+            else:  # Regular
+                factor_lum = 0.5
+            
+            # Factor de nitidez (0-1)
+            if nit >= 800:  # Muy nítido
+                factor_nit = 1.0
+            elif nit >= 400:  # Nítido
+                factor_nit = 0.8
+            elif nit >= 150:  # Aceptable
+                factor_nit = 0.6
+            elif nit >= 50:  # Regular
+                factor_nit = 0.3
+            else:  # Borroso
+                factor_nit = 0.1
+            
+            # Factor de detección de láser
+            factor_laser = 1.2 if laser else 0.8
+            
+            # Factor de consistencia (qué tan bien coinciden los valores)
+            consistencia = 1.0
+            if (factor_lum > 0.7 and factor_nit < 0.3) or (factor_lum < 0.3 and factor_nit > 0.7):
+                consistencia = 0.7  # Penalizar inconsistencias
+            
+            # Cálculo final
+            probabilidad_base = (factor_lum * 0.3 + factor_nit * 0.4) * factor_laser * consistencia
+            
+            # Incorporar la calidad del frame como factor adicional
+            probabilidad_final = (probabilidad_base * 0.7 + calidad_base * 0.3)
+            
+            # Asegurar que esté en el rango 0-100
+            probabilidad_final = max(0, min(100, probabilidad_final * 100))
+            
+            return round(probabilidad_final, 2)
+            
+        except Exception as e:
+            logger.error(f"Error calculando probabilidad de confiabilidad: {e}")
             return 0.0
 
     def read(self):
@@ -121,7 +201,9 @@ class IMXReader:
             nit = self.calcular_nitidez(frame)
             laser = self.detectar_laser(frame)
             calidad = self.calcular_score(lum, nit, laser)
-            prob = round(calidad * 100, 2)
+            
+            # Calcular probabilidad de confiabilidad basada en todos los factores
+            prob = self.calcular_probabilidad_confiabilidad(lum, nit, laser, calidad)
 
             datos = {
                 "luminosidad_promedio": round(lum, 2),
