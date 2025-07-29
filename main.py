@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
         print("🔌 Sin conexión: se omitió la creación de tablas remotas")
 
     async def tf_task():
-        """Tarea mejorada para el sensor TF-Luna con debugging detallado"""
+        """Tarea corregida para el sensor TF-Luna"""
         consecutive_no_data = 0
         message_count = 0
         
@@ -86,51 +86,98 @@ async def lifespan(app: FastAPI):
             try:
                 # Verificar conectividad
                 internet_available = await is_connected()
-                logger.info(f"🌐 TF-Luna task - Internet: {'Available' if internet_available else 'Offline'}")
+                print(f"🌐 TF-Luna task - Internet: {'Available' if internet_available else 'Offline'}")
                 
                 # Obtener datos del controlador
                 controller = app.state.tf_controller
                 if not controller:
-                    logger.error("❌ TF-Luna controller no está disponible")
+                    print("❌ TF-Luna controller no está disponible")
                     await asyncio.sleep(5)
                     continue
                     
+                # OBTENER DATOS DEL SENSOR
                 data = await controller.get_tf_data(event=False)
                 
                 if data:
                     consecutive_no_data = 0
                     message_count += 1
-                    logger.info(f"📡 TF-Luna DATA #{message_count}: {data.dict()}")
+                    
+                    # CONVERTIR A DICT AQUÍ - ESTE ES EL PUNTO CRÍTICO
+                    sensor_dict = data.dict()
+                    print(f"📡 TF-Luna DATA #{message_count}: {sensor_dict}")
                     
                     # Enviar por WebSocket solo si no hay internet
                     if not internet_available:
-                        ws_stats = ws_manager.get_stats()
-                        logger.info(f"📤 Enviando a WebSocket - Conexiones activas: {ws_stats['active_connections']}")
+                        print(f"📤 Enviando datos del sensor por WebSocket...")
+                        print(f"🔍 Datos a enviar: {sensor_dict}")
                         
-                        if ws_stats['active_connections'] > 0:
-                            await ws_manager.send_data(data.dict())
-                            logger.info("✅ Datos enviados por WebSocket")
-                        else:
-                            logger.warning("⚠️ No hay conexiones WebSocket activas")
+                        # ENVIAR EL DICT DEL SENSOR, NO EL OBJETO
+                        await ws_manager.send_data(sensor_dict)
+                        print("✅ Datos del sensor enviados por WebSocket")
                     else:
-                        logger.info("🌐 Internet disponible - No enviando por WebSocket")
+                        print("🌐 Internet disponible - No enviando por WebSocket")
                 else:
                     consecutive_no_data += 1
-                    logger.warning(f"📡 TF-Luna: Sin datos (consecutivo: {consecutive_no_data})")
+                    print(f"📡 TF-Luna: Sin datos (consecutivo: {consecutive_no_data})")
                     
                     # Si no hay datos por mucho tiempo, revisar el sensor
                     if consecutive_no_data >= 10:
-                        logger.error("❌ TF-Luna: Sin datos por 10 segundos consecutivos")
-                        # Aquí podrías reinicializar el sensor o hacer algún diagnóstico
+                        print("❌ TF-Luna: Sin datos por 10 segundos consecutivos")
                         
             except Exception as e:
                 import traceback
-                logger.error(f"❌ Error en TF-Luna task: {str(e)}")
-                logger.error(f"📋 Traceback:\n{traceback.format_exc()}")
+                print(f"❌ Error en TF-Luna task: {str(e)}")
+                print(f"📋 Traceback:\n{traceback.format_exc()}")
                 
             await asyncio.sleep(1)
 
-    # También agrega esta función de diagnóstico
+    async def test_sensor_data_flow():
+        """Función para probar el flujo completo de datos"""
+        try:
+            print("🧪 === TEST DEL FLUJO DE DATOS ===")
+            
+            # 1. Obtener datos del controlador
+            controller = app.state.tf_controller
+            if not controller:
+                print("❌ Controller no disponible")
+                return
+                
+            # 2. Obtener datos del sensor
+            sensor_data = await controller.get_tf_data(event=False)
+            if not sensor_data:
+                print("❌ No hay datos del sensor")
+                return
+                
+            print(f"✅ Datos del sensor obtenidos: {type(sensor_data)}")
+            
+            # 3. Convertir a dict
+            sensor_dict = sensor_data.dict()
+            print(f"✅ Dict del sensor: {sensor_dict}")
+            
+            # 4. Verificar campos esperados
+            expected_fields = ['distancia_cm', 'distancia_m', 'temperatura', 'fuerza_senal', 'id_project']
+            available_fields = list(sensor_dict.keys())
+            print(f"📋 Campos disponibles: {available_fields}")
+            
+            missing_fields = [field for field in expected_fields if field not in available_fields]
+            if missing_fields:
+                print(f"⚠️ Campos faltantes: {missing_fields}")
+            else:
+                print("✅ Todos los campos esperados están presentes")
+                
+            # 5. Probar envío por WebSocket
+            print("📤 Probando envío por WebSocket...")
+            await ws_manager.send_data(sensor_dict)
+            print("✅ Envío completado")
+            
+            return sensor_dict
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ Error en test: {str(e)}")
+            print(f"📋 Traceback:\n{traceback.format_exc()}")
+            return None
+
     async def diagnose_tf_system():
         """Función de diagnóstico para el sistema TF-Luna"""
         try:
@@ -149,7 +196,7 @@ async def lifespan(app: FastAPI):
             data = await controller.get_tf_data(event=False)
             
             diagnosis = {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
                 "controller_available": controller is not None,
                 "internet_available": internet,
                 "websocket_stats": ws_stats,
@@ -163,11 +210,10 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             error_diagnosis = {
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.datetime.utcnow().isoformat()
             }
             logger.error(f"❌ Error en diagnóstico: {error_diagnosis}")
             return error_diagnosis
-
 
     async def imx_task():
         while True:
@@ -393,7 +439,6 @@ async def health_check():
     }
 
 if __name__ == "__main__":
-    
     uvicorn.run(
         "main:app", 
         host="0.0.0.0",
