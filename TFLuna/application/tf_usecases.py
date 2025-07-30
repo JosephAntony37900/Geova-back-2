@@ -46,11 +46,9 @@ class TFUseCase:
         if not existing_record:
             return {"msg": f"No existe una medición con ID {sensor_id}", "success": False}
 
-        # Mantener el project_id original
         data.id = sensor_id
         data.id_project = existing_record.id_project
         
-        # PUT normal: resetear a medición simple
         data.is_dual_measurement = False
         data.measurement_count = 1
         data.total_distance_cm = None
@@ -75,7 +73,6 @@ class TFUseCase:
                 "success": False
             }
 
-        # Calcular medición dual
         MARGIN_CM = 7.5
         total_distance_cm = existing_record.distancia_cm + new_data.distancia_cm - MARGIN_CM
         total_distance_m = round(total_distance_cm / 100, 2)
@@ -86,11 +83,9 @@ class TFUseCase:
                 "success": False
             }
         
-        # Calcular promedios
         avg_fuerza_senal = round((existing_record.fuerza_senal + new_data.fuerza_senal) / 2)
         avg_temperatura = round((existing_record.temperatura + new_data.temperatura) / 2, 2)
         
-        # Crear datos actualizados
         updated_data = SensorTF(
             id=existing_record.id,
             id_project=existing_record.id_project,

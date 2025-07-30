@@ -37,14 +37,10 @@ class HCUseCase:
                 event=event
             )
             
-            # ✅ SIEMPRE intentar publicar a MQTT (independiente de event)
-            try:
-                if await self.is_connected():
-                    asyncio.create_task(self._publish_to_mqtt(data))
-            except Exception as e:
-                print(f"🟡 HC-SR04: Error verificando conexión para MQTT - {e}")
+            # ✅ SIEMPRE publicar a MQTT (igual que TF-Luna)
+            self.publisher.publish(data)
             
-            # ✅ SOLO guardar en BD si event=True
+            # ✅ SOLO guardar en BD si event=True (igual que TF-Luna)
             if event:
                 try:
                     online = await self.is_connected()
@@ -61,13 +57,6 @@ class HCUseCase:
                 print(f"🔴 HC-SR04: Error en execute - {e}")
             return None
 
-    async def _publish_to_mqtt(self, data: HCSensorData):
-        try:
-            self.publisher.publish(data)
-            print(f"📡 HC-SR04: Publicado a MQTT - {data.distancia_cm:.1f} cm")
-        except Exception as e:
-            print(f"🟡 HC-SR04: Error publicando a MQTT - {e}")
-
     async def create(self, data: HCSensorData):
         if not data.event:
             return {"msg": "No se almacenó porque event es False", "success": True}
@@ -75,8 +64,8 @@ class HCUseCase:
         try:
             online = await self.is_connected()
             
-            if online:
-                asyncio.create_task(self._publish_to_mqtt(data))
+            # Publicar a MQTT
+            self.publisher.publish(data)
                 
             await self.repository.save(data, online)
             return {"msg": "Datos guardados correctamente", "success": True}
@@ -94,8 +83,8 @@ class HCUseCase:
             
             data.id_project = project_id
             
-            if online:
-                asyncio.create_task(self._publish_to_mqtt(data))
+            # Publicar a MQTT
+            self.publisher.publish(data)
                 
             await self.repository.update_all_by_project(project_id, data, online)
             return {"msg": "Datos HC-SR04 actualizados correctamente", "success": True}
@@ -113,17 +102,17 @@ class HCUseCase:
             
             await self.repository.delete_all_by_project(project_id, online)
             
-            if online:
-                try:
-                    temp_data = HCSensorData(
-                        id_project=project_id,
-                        distancia_cm=0,
-                        event=True
-                    )
-                    temp_data.__dict__["_action"] = "delete"
-                    asyncio.create_task(self._publish_to_mqtt(temp_data))
-                except Exception as e:
-                    print(f"🟡 HC-SR04: Error publicando evento eliminación - {e}")
+            # Publicar evento de eliminación a MQTT
+            try:
+                temp_data = HCSensorData(
+                    id_project=project_id,
+                    distancia_cm=0,
+                    event=True
+                )
+                temp_data.__dict__["_action"] = "delete"
+                self.publisher.publish(temp_data)
+            except Exception as e:
+                print(f"🟡 HC-SR04: Error publicando evento eliminación - {e}")
             
             return {"msg": "Todas las mediciones HC-SR04 del proyecto eliminadas correctamente", "success": True}
         except Exception as e:
