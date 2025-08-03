@@ -1,3 +1,4 @@
+# IMX477/infraestructure/controllers/controller_imx.py
 from IMX477.application.sensor_imx import IMXUseCase
 from IMX477.domain.entities.sensor_imx import SensorIMX477
 
@@ -10,6 +11,18 @@ class IMXController:
 
     async def create_sensor(self, data: SensorIMX477):
         return await self.usecase.create(data)
+    
+    async def update_sensor(self, sensor_id: int, data: SensorIMX477):
+        return await self.usecase.update(sensor_id, data)
+    
+    async def update_dual_sensor(self, sensor_id: int, data: SensorIMX477):
+        return await self.usecase.update_dual(sensor_id, data)
+    
+    async def delete_sensor(self, project_id: int):
+        return await self.usecase.delete(project_id)
+    
+    async def delete_sensor_by_id(self, record_id: int):
+        return await self.usecase.delete_by_id(record_id)
     
     async def get_by_project_id(self, project_id: int):
         return await self.usecase.get_by_project_id(project_id)

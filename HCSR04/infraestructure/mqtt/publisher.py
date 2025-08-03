@@ -1,3 +1,4 @@
+# HCSR04/infraestructure/mqtt/publisher.py
 from HCSR04.domain.ports.mqtt_publisher import MQTTPublisher
 from HCSR04.domain.entities.hc_sensor import HCSensorData
 import pika
@@ -17,7 +18,6 @@ class RabbitMQPublisher(MQTTPublisher):
             conn = pika.BlockingConnection(pika.ConnectionParameters(self.host, credentials=credentials))
             ch = conn.channel()
 
-            # Asegurar exchange y publicar
             ch.exchange_declare(exchange="amq.topic", exchange_type="topic", durable=True)
             message = json.dumps(sensor.dict(), default=str)
             ch.basic_publish(exchange="amq.topic", routing_key=self.routing_key, body=message)

@@ -1,3 +1,4 @@
+# TFLuna/infraestructure/dependencies.py
 from fastapi import FastAPI
 from TFLuna.infraestructure.serial.tf_serial_reader import TFSerialReader
 from TFLuna.infraestructure.mqtt.publisher import RabbitMQPublisher
@@ -6,12 +7,13 @@ from TFLuna.infraestructure.controllers.controller_tf import TFController
 from TFLuna.infraestructure.repositories.tf_repo_dual import DualTFLunaRepository
 import aiohttp
 
-async def is_connected() -> bool:
+async def check_internet_connection() -> bool:
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("https://www.google.com", timeout=2) as response:
+            async with session.get("http://example.com", timeout=3) as response:
                 return response.status == 200
-    except Exception:
+    except Exception as e:
+        print(f"Error verificando conexión: {e}")
         return False
 
 def init_tf_dependencies(
@@ -29,6 +31,6 @@ def init_tf_dependencies(
         routing_key=rabbitmq_config["routing_key"]
     )
 
-    usecase = TFUseCase(reader, repository, publisher, is_connected)
+    usecase = TFUseCase(reader, repository, publisher, check_internet_connection)
     controller = TFController(usecase)
     app.state.tf_controller = controller

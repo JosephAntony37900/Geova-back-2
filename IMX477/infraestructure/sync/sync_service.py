@@ -1,3 +1,4 @@
+# IMX477/infraestructure/sync/sync_service.py
 import asyncio
 from sqlalchemy import select, update
 from IMX477.infraestructure.repositories.schemas_sqlalchemy import SensorIMX477Model
@@ -14,19 +15,23 @@ async def sync_imx_pending_data(local_session_factory, remote_session_factory, i
                 for doc in unsynced:
                     try:
                         async with remote_session_factory() as remote:
-                            remote.add(SensorIMX477Model(**doc.as_dict()))
+                            doc_dict = doc.as_dict()
+                            doc_dict.pop('id', None)
+                            remote_model = SensorIMX477Model(**doc_dict)
+                            remote.add(remote_model)
                             await remote.commit()
 
                         stmt_update = (
                             update(SensorIMX477Model)
-                            .where(SensorIMX477Model.id_project == doc.id_project)
+                            .where(SensorIMX477Model.id == doc.id)
                             .values(synced=True)
                         )
                         await local.execute(stmt_update)
                         await local.commit()
-                        print(f"✅ IMX sincronizado: {doc.id_project}")
+                        print(f"✅ IMX Sincronizado registro ID: {doc.id}, Proyecto: {doc.id_project}")
+                        
                     except Exception as e:
-                        print(f"❌ Error al sincronizar IMX: {e}")
+                        print(f"❌ Error al sincronizar IMX registro {doc.id}: {e}")
         else:
             print("🔌 Sin conexión (IMX): solo local.")
         await asyncio.sleep(10)
