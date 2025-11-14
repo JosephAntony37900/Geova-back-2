@@ -16,6 +16,7 @@ def setup_cors(app: FastAPI):
         "http://raspberrypi.local:3000",  # React en Raspberry Pi
         "http://raspberrypi.local:5173",  # Vite en Raspberry Pi
         "http://raspberrypi.local",  # Raspberry Pi general
+        "https://www.geova.pro/",  # Producción
         
         # Agregar más orígenes según sea necesario
     ]

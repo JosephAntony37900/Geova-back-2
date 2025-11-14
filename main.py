@@ -297,6 +297,7 @@ app.add_middleware(
         "http://192.168.*",
         "http://10.*",
         "http://172.16.*",
+        "https://www.geova.pro",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

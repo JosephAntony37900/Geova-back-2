@@ -30,10 +30,10 @@ class TFUseCase:
             return {"msg": "No se almacenó porque event es False"}
 
         online = await self.is_connected()
-        exists = await self.repository.exists_by_project(data.id_project, online)
-
-        if exists:
-            return {"msg": f"Ya existen 4 mediciones para el proyecto {data.id_project}"}
+        #exists = await self.repository.exists_by_project(data.id_project, online)
+        #descomentar si se quiere limitar a 4 mediciones por proyecto
+        #if exists:
+        #    return {"msg": f"Ya existen 4 mediciones para el proyecto {data.id_project}"}
 
         self.publisher.publish(data)
         await self.repository.save(data, online)
