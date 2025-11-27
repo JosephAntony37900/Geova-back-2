@@ -4,11 +4,24 @@ import cv2
 import numpy as np
 import subprocess
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
+import time
 
 logger = logging.getLogger(__name__)
 
 class IMXReader:
-    def obtener_frame(self):
+    def __init__(self):
+        # ThreadPoolExecutor para operaciones bloqueantes
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="IMX477")
+        # Cache del último frame capturado
+        self._last_frame: Optional[np.ndarray] = None
+        self._last_frame_time: float = 0
+        self._frame_cache_duration: float = 0.5  # segundos
+        logger.info("IMX477Reader inicializado con ThreadPoolExecutor (2 workers)")
+    def _capturar_frame_sync(self) -> Optional[np.ndarray]:
+        """Método síncrono para captura (ejecutado en thread separado)"""
         try:
             result = subprocess.run([
                 "rpicam-still", 
@@ -41,8 +54,33 @@ class IMXReader:
         except Exception as e:
             logger.error(f"Error al capturar frame: {e}")
             return None
+    
+    async def obtener_frame(self) -> Optional[np.ndarray]:
+        """Captura frame en thread separado (no bloqueante)"""
+        # Verificar si hay frame en cache válido
+        current_time = time.time()
+        if self._last_frame is not None and (current_time - self._last_frame_time) < self._frame_cache_duration:
+            logger.debug("Usando frame desde cache")
+            return self._last_frame
+        
+        # Capturar nuevo frame en thread separado
+        loop = asyncio.get_event_loop()
+        frame = await loop.run_in_executor(self._executor, self._capturar_frame_sync)
+        
+        # Actualizar cache
+        if frame is not None:
+            self._last_frame = frame
+            self._last_frame_time = current_time
+        
+        return frame
+    
+    def obtener_frame_sync(self):
+        """DEPRECATED: Usar obtener_frame() async"""
+        logger.warning("obtener_frame_sync() es deprecated, usar obtener_frame() async")
+        return self._capturar_frame_sync()
 
-    def calcular_luminosidad(self, img):
+    def _calcular_luminosidad_sync(self, img) -> float:
+        """Cálculo síncrono de luminosidad (ejecutado en thread)"""
         try:
             gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             return float(np.mean(gris))
@@ -50,7 +88,13 @@ class IMXReader:
             logger.error(f"Error calculando luminosidad: {e}")
             return 0.0
 
-    def calcular_nitidez(self, img):
+    async def calcular_luminosidad(self, img) -> float:
+        """Calcular luminosidad en thread separado"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._executor, self._calcular_luminosidad_sync, img)
+
+    def _calcular_nitidez_sync(self, img) -> float:
+        """Cálculo síncrono de nitidez (ejecutado en thread)"""
         try:
             gris = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             laplaciano = cv2.Laplacian(gris, cv2.CV_64F)
@@ -59,7 +103,13 @@ class IMXReader:
             logger.error(f"Error calculando nitidez: {e}")
             return 0.0
 
-    def detectar_laser(self, img):
+    async def calcular_nitidez(self, img) -> float:
+        """Calcular nitidez en thread separado"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._executor, self._calcular_nitidez_sync, img)
+
+    def _detectar_laser_sync(self, img) -> bool:
+        """Detección síncrona de láser (ejecutado en thread)"""
         try:
             hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
             
@@ -83,6 +133,11 @@ class IMXReader:
         except Exception as e:
             logger.error(f"Error detectando láser: {e}")
             return False
+    
+    async def detectar_laser(self, img) -> bool:
+        """Detectar láser en thread separado"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._executor, self._detectar_laser_sync, img)
 
     def calcular_score(self, lum, nit, laser):
         """Calcula un score de calidad basado en luminosidad, nitidez y detección de láser."""
@@ -185,24 +240,29 @@ class IMXReader:
             logger.error(f"Error calculando probabilidad de confiabilidad: {e}")
             return 0.0
 
-    def read(self):
+    async def read(self):
+        """Lectura async (no bloqueante) - VERSIÓN MEJORADA CON THREADING"""
         if platform.system() == "Windows":
             logger.warning("📵 IMX477 no disponible en Windows.")
             return None
 
         try:
-            frame = self.obtener_frame()
+            # Capturar frame en thread separado (no bloqueante)
+            frame = await self.obtener_frame()
             if frame is None:
                 logger.error("No se pudo obtener frame de la cámara")
                 return None
 
-            # Calcular métricas
-            lum = self.calcular_luminosidad(frame)
-            nit = self.calcular_nitidez(frame)
-            laser = self.detectar_laser(frame)
-            calidad = self.calcular_score(lum, nit, laser)
+            # Ejecutar cálculos en paralelo usando asyncio.gather (threads)
+            # Esto mejora el rendimiento significativamente
+            lum, nit, laser = await asyncio.gather(
+                self.calcular_luminosidad(frame),
+                self.calcular_nitidez(frame),
+                self.detectar_laser(frame)
+            )
             
-            # Calcular probabilidad de confiabilidad basada en todos los factores
+            # Calcular score y probabilidad (operaciones rápidas, no necesitan thread)
+            calidad = self.calcular_score(lum, nit, laser)
             prob = self.calcular_probabilidad_confiabilidad(lum, nit, laser, calidad)
 
             datos = {
@@ -219,3 +279,8 @@ class IMXReader:
         except Exception as e:
             logger.error(f"Error leyendo datos IMX477: {e}")
             return None
+    
+    def read_sync(self):
+        """DEPRECATED: Usar read() async"""
+        logger.warning("read_sync() es deprecated, usar read() async")
+        return asyncio.run(self.read())

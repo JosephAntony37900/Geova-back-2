@@ -11,7 +11,7 @@ class MPUUseCase:
         self.is_connected = is_connected
 
     async def execute(self, project_id=1, event=False):
-        raw = self.reader.read()
+        raw = await self.reader.read()  # ASYNC: Usa await para no bloquear I2C
         if not raw:
             return None
 

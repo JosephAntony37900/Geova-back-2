@@ -2,6 +2,8 @@
 import time
 import math
 import platform
+import asyncio
+from typing import Optional, Dict
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -18,7 +20,8 @@ class MPUSerialReader:
         else:
             print("🧪 Ejecutando en modo simulado (Windows). No se accede al hardware.")
 
-    def read(self):
+    def _read_sync(self) -> Optional[Dict]:
+        """Lectura síncrona (ejecutada en thread separado)"""
         if IS_WINDOWS:
             # Datos simulados para pruebas en Windows
             return {
@@ -55,3 +58,12 @@ class MPUSerialReader:
         except Exception as e:
             print("Error en MPU6050 al leer datos:", e)
             return None
+    
+    async def read(self) -> Optional[Dict]:
+        """Lectura async (no bloqueante)"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._read_sync)
+    
+    def read_sync(self) -> Optional[Dict]:
+        """DEPRECATED: Usar read() async"""
+        return self._read_sync()

@@ -11,7 +11,7 @@ class IMXUseCase:
         self.is_connected = is_connected
 
     async def execute(self, project_id=1, resolution="640x480", event=False):
-        raw = self.reader.read()
+        raw = await self.reader.read()  # ASYNC: Usa await para no bloquear
         if not raw:
             return None
 
