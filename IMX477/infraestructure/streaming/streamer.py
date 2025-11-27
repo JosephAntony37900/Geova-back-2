@@ -107,7 +107,7 @@ class Streamer:
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                bufsize=32768  # Buffer moderado - estable
+                bufsize=32768
             )
             
             await asyncio.sleep(1.5)
