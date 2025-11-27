@@ -20,6 +20,16 @@ class IMXReader:
         self._last_frame_time: float = 0
         self._frame_cache_duration: float = 0.5  # segundos
         logger.info("IMX477Reader inicializado con ThreadPoolExecutor (2 workers)")
+    
+    def _get_streamer(self):
+        """Obtiene el streamer de forma lazy para evitar imports circulares"""
+        try:
+            from IMX477.infraestructure.streaming.streamer import get_streamer
+            return get_streamer()
+        except Exception as e:
+            logger.error(f"Error obteniendo streamer: {e}")
+            return None
+
     def _capturar_frame_sync(self) -> Optional[np.ndarray]:
         """Método síncrono para captura (ejecutado en thread separado)"""
         try:
@@ -56,14 +66,30 @@ class IMXReader:
             return None
     
     async def obtener_frame(self) -> Optional[np.ndarray]:
-        """Captura frame en thread separado (no bloqueante)"""
-        # Verificar si hay frame en cache válido
+        """Captura frame - usa streaming si está activo, sino rpicam-still"""
+        # Primero intentar obtener frame del streaming si está activo
+        streamer = self._get_streamer()
+        if streamer and streamer.is_streaming:
+            frame = streamer.get_current_frame()
+            if frame is not None:
+                logger.debug("Frame obtenido del streaming activo")
+                return frame
+            else:
+                # Esperar un poco por un nuevo frame del streaming
+                frame = await streamer.wait_for_frame(timeout=1.0)
+                if frame is not None:
+                    logger.debug("Frame obtenido del streaming (esperado)")
+                    return frame
+                logger.warning("Streaming activo pero sin frames disponibles")
+                return None
+        
+        # Si no hay streaming activo, verificar cache
         current_time = time.time()
         if self._last_frame is not None and (current_time - self._last_frame_time) < self._frame_cache_duration:
             logger.debug("Usando frame desde cache")
             return self._last_frame
         
-        # Capturar nuevo frame en thread separado
+        # Capturar nuevo frame con rpicam-still en thread separado
         loop = asyncio.get_event_loop()
         frame = await loop.run_in_executor(self._executor, self._capturar_frame_sync)
         
