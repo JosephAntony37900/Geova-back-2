@@ -103,19 +103,41 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(1)
 
     async def imx_task():
+        from IMX477.infraestructure.streaming.streamer import get_streamer
+        streamer = get_streamer()
+        
         while True:
             try:
-                internet_available = await is_connected()
-                controller = app.state.imx_controller
-                data = await controller.get_imx_data(event=False)
-                print("📷 IMX477:", data.dict() if data else "Sin datos")
-                if not internet_available and data:
-                    await ws_manager_imx.send_data(data.dict())
+                # Si el streaming está activo, no competir por recursos
+                # El análisis se hace desde los frames del streaming
+                if streamer.is_streaming:
+                    # Solo analizar si hay un frame disponible del streaming
+                    frame = streamer.get_current_frame()
+                    if frame is not None:
+                        internet_available = await is_connected()
+                        controller = app.state.imx_controller
+                        data = await controller.get_imx_data(event=False)
+                        if data:
+                            print("📷 IMX477 (desde streaming):", data.dict())
+                            if not internet_available:
+                                await ws_manager_imx.send_data(data.dict())
+                    else:
+                        print("📷 IMX477: Streaming activo, esperando frames...")
+                    await asyncio.sleep(3)  # Más lento cuando hay streaming
+                else:
+                    # Sin streaming activo, capturar normalmente
+                    internet_available = await is_connected()
+                    controller = app.state.imx_controller
+                    data = await controller.get_imx_data(event=False)
+                    print("📷 IMX477:", data.dict() if data else "Sin datos")
+                    if not internet_available and data:
+                        await ws_manager_imx.send_data(data.dict())
+                    await asyncio.sleep(2)
             except Exception:
                 import traceback
                 print("Error en IMX477:")
                 traceback.print_exc()
-            await asyncio.sleep(2)
+                await asyncio.sleep(2)
 
     async def mpu_task():
         while True:
@@ -339,10 +361,10 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    from IMX477.infraestructure.streaming.streamer import Streamer
+    from IMX477.infraestructure.streaming.streamer import get_streamer
     
-    temp_streamer = Streamer()
-    streaming_status = temp_streamer.get_status()
+    streamer = get_streamer()
+    streaming_status = streamer.get_status()
     
     connection_status = await is_connected()
     
