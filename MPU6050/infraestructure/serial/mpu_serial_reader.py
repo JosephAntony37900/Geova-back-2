@@ -2,6 +2,8 @@
 import time
 import math
 import platform
+import asyncio
+from typing import Optional, Dict
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -11,14 +13,30 @@ if not IS_WINDOWS:
 class MPUSerialReader:
     def __init__(self, bus=1, address=0x68):
         self.address = address
+        self.bus = None
+        self.is_available = False
+        
         if not IS_WINDOWS:
-            self.bus = smbus.SMBus(bus)
-            self.bus.write_byte_data(self.address, 0x6B, 0)
-            time.sleep(0.3)  # Esperar a que se estabilice
+            try:
+                self.bus = smbus.SMBus(bus)
+                self.bus.write_byte_data(self.address, 0x6B, 0)
+                time.sleep(0.3)  # Esperar a que se estabilice
+                self.is_available = True
+                print("✅ MPU6050 inicializado correctamente")
+            except OSError as e:
+                print(f"⚠️ MPU6050 no disponible (I2C error): {e}")
+                print("   El sensor MPU6050 no está conectado o no responde.")
+                print("   La aplicación continuará sin el sensor MPU6050.")
+                self.is_available = False
+            except Exception as e:
+                print(f"⚠️ Error inesperado al inicializar MPU6050: {e}")
+                self.is_available = False
         else:
             print("🧪 Ejecutando en modo simulado (Windows). No se accede al hardware.")
+            self.is_available = True  # Simulación disponible
 
-    def read(self):
+    def _read_sync(self) -> Optional[Dict]:
+        """Lectura síncrona (ejecutada en thread separado)"""
         if IS_WINDOWS:
             # Datos simulados para pruebas en Windows
             return {
@@ -26,6 +44,9 @@ class MPUSerialReader:
                 "gx": 0.1, "gy": 0.2, "gz": 0.3,
                 "roll": 1.5, "pitch": 0.5, "apertura": 2.0
             }
+        
+        if not self.is_available or self.bus is None:
+            return None
 
         def read_word(reg):
             h = self.bus.read_byte_data(self.address, reg)
@@ -55,3 +76,12 @@ class MPUSerialReader:
         except Exception as e:
             print("Error en MPU6050 al leer datos:", e)
             return None
+    
+    async def read(self) -> Optional[Dict]:
+        """Lectura async (no bloqueante)"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._read_sync)
+    
+    def read_sync(self) -> Optional[Dict]:
+        """DEPRECATED: Usar read() async"""
+        return self._read_sync()

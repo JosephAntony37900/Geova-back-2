@@ -1,20 +1,18 @@
 # IMX477/infraestructure/routes/streaming_routes.py
 from fastapi import APIRouter, Response, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
-from IMX477.infraestructure.streaming.streamer import Streamer
+from IMX477.infraestructure.streaming.streamer import get_streamer
 import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/imx477/streaming")
 
-# Instancia global del streamer
-streamer = Streamer()
-
 @router.post("/start")
 async def start_streaming():
     """Inicia el streaming de video."""
     try:
+        streamer = get_streamer()
         logger.info("📷 Iniciando streaming de video...")
         success = await streamer.start_stream()
         
@@ -44,6 +42,7 @@ async def start_streaming():
 async def stop_streaming():
     """Detiene el streaming de video."""
     try:
+        streamer = get_streamer()
         logger.info("🛑 Deteniendo streaming de video...")
         success = await streamer.stop_stream()
         
@@ -77,6 +76,7 @@ async def stop_streaming():
 async def get_streaming_status():
     """Obtiene el estado actual del streaming."""
     try:
+        streamer = get_streamer()
         status = streamer.get_status()
         return JSONResponse(
             status_code=200,
@@ -93,6 +93,7 @@ async def get_streaming_status():
 def video_feed():
     """Stream de video en tiempo real - versión SÍNCRONA como tu API de prueba."""
     try:
+        streamer = get_streamer()
         # Verificar que el streaming esté activo
         status = streamer.get_status()
         if not status["active"]:
@@ -125,6 +126,7 @@ def video_feed():
 async def streaming_health():
     """Health check específico para streaming."""
     try:
+        streamer = get_streamer()
         status = streamer.get_status()
         return JSONResponse(
             status_code=200,

@@ -4,10 +4,24 @@ import platform
 
 class TFSerialReader:
     def __init__(self, port="/dev/ttyAMA0", baudrate=115200):
+        self.ser = None
+        self.is_available = False
+        
         if platform.system() != "Windows":
-            self.ser = serial.Serial(port, baudrate, timeout=0)
+            try:
+                self.ser = serial.Serial(port, baudrate, timeout=0)
+                self.is_available = True
+                print("✅ TFLuna inicializado correctamente")
+            except serial.SerialException as e:
+                print(f"⚠️ TFLuna no disponible (Serial error): {e}")
+                print("   El sensor TFLuna no está conectado o el puerto no existe.")
+                print("   La aplicación continuará sin el sensor TFLuna.")
+                self.is_available = False
+            except Exception as e:
+                print(f"⚠️ Error inesperado al inicializar TFLuna: {e}")
+                self.is_available = False
         else:
-            self.ser = None
+            print("🧪 TFLuna: Ejecutando en modo simulado (Windows).")
             
     def read(self):
         if self.ser is None or self.ser.in_waiting < 9:

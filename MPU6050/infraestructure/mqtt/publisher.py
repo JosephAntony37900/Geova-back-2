@@ -19,7 +19,6 @@ class RabbitMQMPUPublisher(MPUPublisher):
             )
             ch = conn.channel()
             
-            # Asegurar exchange y publicar
             ch.exchange_declare(exchange="amq.topic", exchange_type="topic", durable=True)
             message = json.dumps(sensor.dict(), default=str)
             ch.basic_publish(exchange="amq.topic", routing_key=self.routing_key, body=message)
