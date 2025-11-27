@@ -13,27 +13,42 @@ if not IS_WINDOWS:
 class MPUSerialReader:
     def __init__(self, bus=1, address=0x68):
         self.address = address
+        self.bus_number = bus
         self.bus = None
         self.is_available = False
+        self._last_error_time = 0
+        self._error_retry_delay = 5  # Segundos entre reintentos tras error
         
         if not IS_WINDOWS:
-            try:
-                self.bus = smbus.SMBus(bus)
-                self.bus.write_byte_data(self.address, 0x6B, 0)
-                time.sleep(0.3)  # Esperar a que se estabilice
-                self.is_available = True
-                print("✅ MPU6050 inicializado correctamente")
-            except OSError as e:
-                print(f"⚠️ MPU6050 no disponible (I2C error): {e}")
-                print("   El sensor MPU6050 no está conectado o no responde.")
-                print("   La aplicación continuará sin el sensor MPU6050.")
-                self.is_available = False
-            except Exception as e:
-                print(f"⚠️ Error inesperado al inicializar MPU6050: {e}")
-                self.is_available = False
+            self._initialize_bus()
         else:
             print("🧪 Ejecutando en modo simulado (Windows). No se accede al hardware.")
             self.is_available = True  # Simulación disponible
+
+    def _initialize_bus(self) -> bool:
+        """Inicializa o reinicializa el bus I2C."""
+        try:
+            if self.bus is not None:
+                try:
+                    self.bus.close()
+                except:
+                    pass
+            
+            self.bus = smbus.SMBus(self.bus_number)
+            # Despertar el MPU6050 (escribir 0 en registro PWR_MGMT_1)
+            self.bus.write_byte_data(self.address, 0x6B, 0)
+            time.sleep(0.1)  # Esperar a que se estabilice
+            self.is_available = True
+            print("✅ MPU6050 inicializado correctamente")
+            return True
+        except OSError as e:
+            print(f"⚠️ MPU6050 no disponible (I2C error): {e}")
+            self.is_available = False
+            return False
+        except Exception as e:
+            print(f"⚠️ Error inesperado al inicializar MPU6050: {e}")
+            self.is_available = False
+            return False
 
     def _read_sync(self) -> Optional[Dict]:
         """Lectura síncrona (ejecutada en thread separado)"""
@@ -45,7 +60,20 @@ class MPUSerialReader:
                 "roll": 1.5, "pitch": 0.5, "apertura": 2.0
             }
         
-        if not self.is_available or self.bus is None:
+        # Si no está disponible, intentar reinicializar después del delay
+        if not self.is_available:
+            current_time = time.time()
+            if current_time - self._last_error_time > self._error_retry_delay:
+                print("🔄 MPU6050: Intentando reconectar...")
+                if self._initialize_bus():
+                    print("✅ MPU6050: Reconexión exitosa")
+                else:
+                    self._last_error_time = current_time
+                    return None
+            else:
+                return None
+        
+        if self.bus is None:
             return None
 
         def read_word(reg):
@@ -73,8 +101,13 @@ class MPUSerialReader:
                 "apertura": round(apertura, 2)
             }
 
+        except OSError as e:
+            print(f"Error I2C en MPU6050: {e}")
+            self.is_available = False
+            self._last_error_time = time.time()
+            return None
         except Exception as e:
-            print("Error en MPU6050 al leer datos:", e)
+            print(f"Error en MPU6050 al leer datos: {e}")
             return None
     
     async def read(self) -> Optional[Dict]:
