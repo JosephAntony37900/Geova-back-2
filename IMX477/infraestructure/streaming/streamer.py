@@ -92,23 +92,22 @@ class Streamer:
             
             logger.info("🎬 Iniciando rpicam-vid...")
             
-            # Comando optimizado para BAJA LATENCIA
+            # Comando estable con buena fluidez
             self.proc = subprocess.Popen(
                 [
                     "rpicam-vid", 
                     "--nopreview", 
                     "-t", "0",
                     "--codec", "mjpeg", 
-                    "--quality", "70",
+                    "--quality", "75",
                     "--width", "640", 
                     "--height", "480", 
-                    "--framerate", "30",
-                    "--flush",  # Flush cada frame - reduce latencia
+                    "--framerate", "25",
                     "-o", "-"
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                bufsize=0  # Sin buffer - mínima latencia
+                bufsize=32768  # Buffer moderado - estable
             )
             
             await asyncio.sleep(1.5)
@@ -164,7 +163,7 @@ class Streamer:
         
         return {
             "active": is_active,
-            "fps": 30 if is_active else 0
+            "fps": 25 if is_active else 0
         }
     
     def generate_frames(self) -> Generator[bytes, None, None]:
