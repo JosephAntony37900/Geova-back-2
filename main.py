@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 import aiohttp
 
 from core.config import get_local_engine, get_remote_engine, get_rabbitmq_config
-from core.cors import setup_cors
+from core.concurrency import connectivity_cache, cleanup as cleanup_concurrency
 from TFLuna.infraestructure.sync.sync_service import sync_tf_pending_data
 from IMX477.infraestructure.sync.sync_service import sync_imx_pending_data
 from MPU6050.infraestructure.sync.sync_service import sync_mpu_pending_data
@@ -43,14 +43,21 @@ local_session = get_local_engine()
 remote_session = get_remote_engine()
 rabbitmq_config = get_rabbitmq_config()
 
-async def is_connected() -> bool:
+async def _check_connectivity() -> bool:
+    """Función interna para verificar conectividad (usada por el caché)."""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("http://example.com", timeout=3) as response:
+            async with session.get("http://example.com", timeout=aiohttp.ClientTimeout(total=3)) as response:
                 return response.status == 200
-    except Exception as e:
-        print(f"Error verificando conexión: {e}")
+    except Exception:
         return False
+
+async def is_connected() -> bool:
+    """
+    Verifica conectividad usando caché para evitar bloqueos.
+    El caché tiene TTL de 5 segundos para reducir latencia en peticiones concurrentes.
+    """
+    return await connectivity_cache.get_or_check(_check_connectivity)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -87,20 +94,41 @@ async def lifespan(app: FastAPI):
     else:
         print("🔌 Sin conexión: se omitió la creación de tablas remotas :(")
 
+    _cached_internet_status = False
+    _last_connectivity_check = 0
+    
+    async def check_connectivity_periodically():
+        """Tarea dedicada para verificar conectividad cada 10 segundos."""
+        nonlocal _cached_internet_status, _last_connectivity_check
+        import time
+        while True:
+            try:
+                _cached_internet_status = await is_connected()
+                _last_connectivity_check = time.time()
+                print(f"🌐 Conectividad: {'✅ Online' if _cached_internet_status else '❌ Offline'}")
+            except Exception:
+                _cached_internet_status = False
+            await asyncio.sleep(10)
+    
+    def get_cached_connectivity():
+        """Obtener estado de conectividad sin bloquear."""
+        return _cached_internet_status
+
     async def tf_task():
         while True:
             try:
-                internet_available = await is_connected()
-                controller = app.state.tf_controller
-                data = await controller.get_tf_data(event=False)
-                print("📡 TF-Luna:", data.dict() if data else "Sin datos")
-                if not internet_available and data:
-                    await ws_manager.send_data(data.dict())
+                async with asyncio.timeout(3):
+                    controller = app.state.tf_controller
+                    data = await controller.get_tf_data(event=False)
+                    print("📡 TF-Luna:", data.dict() if data else "Sin datos")
+                    # Usar caché de conectividad (no bloquea)
+                    if not get_cached_connectivity() and data:
+                        await ws_manager.send_data(data.dict())
+            except asyncio.TimeoutError:
+                print("📡 TF-Luna: Timeout en lectura")
             except Exception:
-                import traceback
-                print("Error en TF-Luna:")
-                traceback.print_exc()
-            await asyncio.sleep(1)
+                pass
+            await asyncio.sleep(3)
 
     async def imx_task():
         from IMX477.infraestructure.streaming.streamer import get_streamer
@@ -108,51 +136,46 @@ async def lifespan(app: FastAPI):
         
         while True:
             try:
-                # Si el streaming está activo, no competir por recursos
-                # El análisis se hace desde los frames del streaming
-                if streamer.is_streaming:
-                    # Solo analizar si hay un frame disponible del streaming
-                    frame = streamer.get_current_frame()
-                    if frame is not None:
-                        internet_available = await is_connected()
+                async with asyncio.timeout(5):
+                    if streamer.is_streaming:
+                        frame = streamer.get_current_frame()
+                        if frame is not None:
+                            controller = app.state.imx_controller
+                            data = await controller.get_imx_data(event=False)
+                            if data:
+                                print("📷 IMX477 (desde streaming):", data.dict())
+                                if not get_cached_connectivity():
+                                    await ws_manager_imx.send_data(data.dict())
+                        else:
+                            print("📷 IMX477: Streaming activo, esperando frames...")
+                        await asyncio.sleep(5)
+                    else:
                         controller = app.state.imx_controller
                         data = await controller.get_imx_data(event=False)
-                        if data:
-                            print("📷 IMX477 (desde streaming):", data.dict())
-                            if not internet_available:
-                                await ws_manager_imx.send_data(data.dict())
-                    else:
-                        print("📷 IMX477: Streaming activo, esperando frames...")
-                    await asyncio.sleep(3)  # Más lento cuando hay streaming
-                else:
-                    # Sin streaming activo, capturar normalmente
-                    internet_available = await is_connected()
-                    controller = app.state.imx_controller
-                    data = await controller.get_imx_data(event=False)
-                    print("📷 IMX477:", data.dict() if data else "Sin datos")
-                    if not internet_available and data:
-                        await ws_manager_imx.send_data(data.dict())
-                    await asyncio.sleep(2)
+                        print("📷 IMX477:", data.dict() if data else "Sin datos")
+                        if not get_cached_connectivity() and data:
+                            await ws_manager_imx.send_data(data.dict())
+                        await asyncio.sleep(5)
+            except asyncio.TimeoutError:
+                print("📷 IMX477: Timeout en lectura")
+                await asyncio.sleep(5)
             except Exception:
-                import traceback
-                print("Error en IMX477:")
-                traceback.print_exc()
-                await asyncio.sleep(2)
+                await asyncio.sleep(5)
 
     async def mpu_task():
         while True:
             try:
-                internet_available = await is_connected()
-                controller = app.state.mpu_controller
-                data = await controller.get_mpu_data(event=False)
-                print("🌀 MPU6050:", data.dict() if data else "Sin datos")
-                if not internet_available and data:
-                    await ws_manager_mpu.send_data(data.dict())
+                async with asyncio.timeout(3):
+                    controller = app.state.mpu_controller
+                    data = await controller.get_mpu_data(event=False)
+                    print("🌀 MPU6050:", data.dict() if data else "Sin datos")
+                    if not get_cached_connectivity() and data:
+                        await ws_manager_mpu.send_data(data.dict())
+            except asyncio.TimeoutError:
+                print("🌀 MPU6050: Timeout en lectura")
             except Exception:
-                import traceback
-                print("Error en MPU6050:")
-                traceback.print_exc()
-            await asyncio.sleep(1)
+                pass
+            await asyncio.sleep(3)
 
     async def hc_task():
         controller = app.state.hc_controller
@@ -178,7 +201,7 @@ async def lifespan(app: FastAPI):
         
         while True:
                 try:
-                        internet_available = await is_connected()
+                        internet_available = get_cached_connectivity()
                         
                         if not reader.is_connected:
                                 print("🔵 HC-SR04: Sin conexión, intentando reconectar...")
@@ -242,7 +265,7 @@ async def lifespan(app: FastAPI):
         print("Iniciando sincronización TF-Luna...")
         while True:
             try:
-                if await is_connected():
+                if get_cached_connectivity():
                     await sync_tf_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
@@ -253,7 +276,7 @@ async def lifespan(app: FastAPI):
         print("Iniciando sincronización IMX477...")
         while True:
             try:
-                if await is_connected():
+                if get_cached_connectivity():
                     await sync_imx_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
@@ -264,7 +287,7 @@ async def lifespan(app: FastAPI):
         print("Iniciando sincronización MPU6050...")
         while True:
             try:
-                if await is_connected():
+                if get_cached_connectivity():
                     await sync_mpu_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
@@ -275,13 +298,16 @@ async def lifespan(app: FastAPI):
         print("Iniciando sincronización HC-SR04...")
         while True:
             try:
-                if await is_connected():
+                if get_cached_connectivity():
                     await sync_hc_pending_data(local_session, remote_session, is_connected)
                 await asyncio.sleep(30)
             except Exception as e:
                 print(f"Error en sync HC-SR04: {e}")
                 await asyncio.sleep(30)
 
+    print("Creando tarea de verificación de conectividad...")
+    asyncio.create_task(check_connectivity_periodically())
+    
     print("Creando tareas de sensores...")
     asyncio.create_task(tf_task())
     asyncio.create_task(imx_task())
@@ -296,6 +322,7 @@ async def lifespan(app: FastAPI):
     print("📷 Streaming de IMX477 listo para usar")
     yield
     print("Cerrando aplicación...")
+    cleanup_concurrency()
 
 app = FastAPI(
     title="Raspberry Pi Sensor API",
@@ -304,8 +331,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-setup_cors(app)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -313,6 +338,8 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
         "http://raspberrypi.local:3000",
         "http://raspberrypi.local:5173",
         "http://raspberrypi.local",
@@ -320,11 +347,14 @@ app.add_middleware(
         "http://10.*",
         "http://172.16.*",
         "https://www.geova.pro",
+        "https://geova.pro",
+        "*",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["*"],
+    max_age=600,
 )
 
 app.include_router(router_ws_tf)
@@ -359,14 +389,56 @@ async def root():
         }
     }
 
+
+@app.get("/ping")
+@app.head("/ping")
+def ping():
+    """
+    Endpoint SÍNCRONO ultra-ligero para verificar que la API está viva.
+    No usa async para evitar cualquier bloqueo del event loop.
+    """
+    return {"pong": True}
+
+
 @app.get("/health")
-async def health_check():
+@app.head("/health")
+def health_check():
+    """
+    Health check SÍNCRONO - responde inmediatamente sin tocar el event loop.
+    Útil para que el frontend verifique si la API está disponible.
+    """
+    return {
+        "status": "healthy",
+        "message": "API is running"
+    }
+
+
+@app.get("/health/detailed")
+async def health_check_detailed():
+    """
+    Health check detallado con información de todos los servicios.
+    Puede tardar más porque verifica conectividad real.
+    """
     from IMX477.infraestructure.streaming.streamer import get_streamer
+    from core.concurrency import (
+        DB_SEMAPHORE_LOCAL, DB_SEMAPHORE_REMOTE, 
+        RATE_LIMITERS, connectivity_cache
+    )
     
     streamer = get_streamer()
     streaming_status = streamer.get_status()
     
     connection_status = await is_connected()
+    
+    # Información de concurrencia
+    concurrency_info = {
+        "db_local_available": DB_SEMAPHORE_LOCAL._value,
+        "db_local_max": 10,
+        "db_remote_available": DB_SEMAPHORE_REMOTE._value,
+        "db_remote_max": 5,
+        "connectivity_cached": connectivity_cache.get() is not None,
+        "connectivity_cache_ttl": 5.0
+    }
     
     return {
         "status": "healthy",
@@ -380,6 +452,44 @@ async def health_check():
                 "fps": streaming_status["fps"]
             },
             "internet": "connected" if connection_status else "disconnected"
+        },
+        "concurrency": concurrency_info
+    }
+
+
+@app.get("/metrics")
+async def get_metrics():
+    """Endpoint para monitorear métricas de concurrencia y rendimiento."""
+    from core.concurrency import (
+        DB_SEMAPHORE_LOCAL, DB_SEMAPHORE_REMOTE,
+        RATE_LIMITERS, connectivity_cache
+    )
+    
+    return {
+        "semaphores": {
+            "db_local": {
+                "available": DB_SEMAPHORE_LOCAL._value,
+                "max": 10,
+                "usage_percent": round((10 - DB_SEMAPHORE_LOCAL._value) / 10 * 100, 1)
+            },
+            "db_remote": {
+                "available": DB_SEMAPHORE_REMOTE._value,
+                "max": 5,
+                "usage_percent": round((5 - DB_SEMAPHORE_REMOTE._value) / 5 * 100, 1)
+            }
+        },
+        "rate_limiters": {
+            sensor: {
+                "tokens_available": round(limiter._tokens, 2),
+                "capacity": limiter.capacity,
+                "rate_per_second": limiter.rate
+            }
+            for sensor, limiter in RATE_LIMITERS.items()
+        },
+        "connectivity_cache": {
+            "is_cached": connectivity_cache.get() is not None,
+            "cached_value": connectivity_cache.get(),
+            "ttl_seconds": connectivity_cache._ttl
         }
     }
 
@@ -391,5 +501,8 @@ if __name__ == "__main__":
         reload=True,
         reload_dirs=["./"],
         log_level="info",
-        access_log=True
+        access_log=True,
+        limit_concurrency=100,
+        limit_max_requests=None,
+        timeout_keep_alive=5,
     )

@@ -1,8 +1,10 @@
 # MPU6050/infraestructure/routes/routes_mpu.py
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 from MPU6050.domain.entities.sensor_mpu import SensorMPU
 from MPU6050.infraestructure.ws.ws_manager import WebSocketManager_MPU
+from core.concurrency import RATE_LIMITERS
+import asyncio
 
 router_ws_mpu = APIRouter()
 ws_manager_mpu = WebSocketManager_MPU()
@@ -10,9 +12,21 @@ router = APIRouter()
 
 @router.get("/mpu/sensor")
 async def get_mpu_data(request: Request, event: bool = False):
+    # Rate limiting para evitar saturación
+    if not await RATE_LIMITERS["mpu6050"].acquire():
+        raise HTTPException(status_code=429, detail="Demasiadas peticiones, intente más tarde")
+    
     controller = request.app.state.mpu_controller
-    data = await controller.get_mpu_data(event=event)
-    return data.dict() if data else {"error": "No data"}
+    try:
+        data = await asyncio.wait_for(
+            controller.get_mpu_data(event=event),
+            timeout=5.0
+        )
+        return data.dict() if data else {"error": "No data"}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout obteniendo datos del sensor")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/mpu/sensor")
 async def post_mpu_sensor(request: Request, payload: SensorMPU):
@@ -62,11 +76,23 @@ async def delete_mpu_sensor_by_id(request: Request, record_id: int):
 
 @router.get("/mpu/sensor/{project_id}")
 async def get_mpu_by_project_id(request: Request, project_id: int):
+    # Rate limiting para evitar saturación
+    if not await RATE_LIMITERS["mpu6050"].acquire():
+        raise HTTPException(status_code=429, detail="Demasiadas peticiones, intente más tarde")
+    
     controller = request.app.state.mpu_controller
-    data = await controller.get_by_project_id(project_id)
-    if data:
-        return data
-    return JSONResponse(content={"error": "No se encontró inclinación para ese proyecto"}, status_code=404)
+    try:
+        data = await asyncio.wait_for(
+            controller.get_by_project_id(project_id),
+            timeout=5.0
+        )
+        if data:
+            return data
+        return JSONResponse(content={"error": "No se encontró inclinación para ese proyecto"}, status_code=404)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout consultando base de datos")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router_ws_mpu.websocket("/mpu/sensor/ws")
 async def mpu_ws(websocket: WebSocket):

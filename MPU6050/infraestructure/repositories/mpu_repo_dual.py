@@ -6,11 +6,20 @@ from MPU6050.domain.entities.sensor_mpu import SensorMPU
 from MPU6050.infraestructure.repositories.schemas_sqlalchemy import SensorMPUModel
 from datetime import datetime
 from typing import List, Optional
+import asyncio
+import logging
+from core.concurrency import DB_SEMAPHORE_LOCAL, DB_SEMAPHORE_REMOTE, DB_QUERY_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 class DualMPURepository(MPURepository):
     def __init__(self, session_local_factory, session_remote_factory):
         self.local_factory = session_local_factory
         self.remote_factory = session_remote_factory
+    
+    def _get_semaphore(self, online: bool):
+        """Retorna el semáforo apropiado según el tipo de BD."""
+        return DB_SEMAPHORE_REMOTE if online else DB_SEMAPHORE_LOCAL
 
     async def save(self, sensor_data: SensorMPU, online: bool):
         data_dict = sensor_data.dict()
@@ -124,49 +133,101 @@ class DualMPURepository(MPURepository):
 
     async def exists_by_project(self, project_id: int, online: bool) -> bool:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            stmt = select(func.count()).select_from(SensorMPUModel).where(
-                SensorMPUModel.id_project == project_id
-            )
-            result = await session.execute(stmt)
-            count = result.scalar()
-            return count >= 4
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = select(func.count()).select_from(SensorMPUModel).where(
+                            SensorMPUModel.id_project == project_id
+                        )
+                        result = await session.execute(stmt)
+                        count = result.scalar()
+                        return count >= 4
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en exists_by_project MPU proyecto {project_id}")
+            if online:
+                return await self.exists_by_project(project_id, online=False)
+            return False
+        except Exception as e:
+            logger.error(f"Error en exists_by_project MPU: {e}")
+            if online:
+                return await self.exists_by_project(project_id, online=False)
+            return False
 
     async def get_by_project_id(self, project_id: int, online: bool) -> List[SensorMPU]:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            stmt = (
-                select(SensorMPUModel)
-                .where(SensorMPUModel.id_project == project_id)
-                .order_by(SensorMPUModel.timestamp.desc())
-                .limit(4)
-            )
-            result = await session.execute(stmt)
-            records = result.scalars().all()
-            return [SensorMPU(**r.as_dict()) for r in records]
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = (
+                            select(SensorMPUModel)
+                            .where(SensorMPUModel.id_project == project_id)
+                            .order_by(SensorMPUModel.timestamp.desc())
+                            .limit(4)
+                        )
+                        result = await session.execute(stmt)
+                        records = result.scalars().all()
+                        return [SensorMPU(**r.as_dict()) for r in records]
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en get_by_project_id MPU proyecto {project_id}")
+            if online:
+                return await self.get_by_project_id(project_id, online=False)
+            return []
+        except Exception as e:
+            logger.error(f"Error en get_by_project_id MPU: {e}")
+            if online:
+                return await self.get_by_project_id(project_id, online=False)
+            return []
 
     async def has_any_record(self, project_id: int, online: bool) -> bool:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            try:
-                stmt = select(func.count()).select_from(SensorMPUModel).where(
-                    SensorMPUModel.id_project == project_id
-                )
-                result = await session.execute(stmt)
-                count = result.scalar()
-                return count > 0
-            except Exception as e:
-                await session.rollback()
-                raise e
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = select(func.count()).select_from(SensorMPUModel).where(
+                            SensorMPUModel.id_project == project_id
+                        )
+                        result = await session.execute(stmt)
+                        count = result.scalar()
+                        return count > 0
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en has_any_record MPU proyecto {project_id}")
+            if online:
+                return await self.has_any_record(project_id, online=False)
+            return False
+        except Exception as e:
+            logger.error(f"Error en has_any_record MPU: {e}")
+            if online:
+                return await self.has_any_record(project_id, online=False)
+            return False
                 
     async def get_by_id(self, record_id: int, online: bool) -> Optional[SensorMPU]:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            try:
-                stmt = select(SensorMPUModel).where(SensorMPUModel.id == record_id)
-                result = await session.execute(stmt)
-                record = result.scalars().first()
-                return SensorMPU(**record.as_dict()) if record else None
-            except Exception as e:
-                await session.rollback()
-                raise e
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = select(SensorMPUModel).where(SensorMPUModel.id == record_id)
+                        result = await session.execute(stmt)
+                        record = result.scalars().first()
+                        return SensorMPU(**record.as_dict()) if record else None
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en get_by_id MPU id {record_id}")
+            if online:
+                return await self.get_by_id(record_id, online=False)
+            return None
+        except Exception as e:
+            logger.error(f"Error en get_by_id MPU: {e}")
+            if online:
+                return await self.get_by_id(record_id, online=False)
+            return None

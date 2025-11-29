@@ -6,11 +6,20 @@ from IMX477.domain.entities.sensor_imx import SensorIMX477
 from IMX477.infraestructure.repositories.schemas_sqlalchemy import SensorIMX477Model
 from datetime import datetime
 from typing import List, Optional
+import asyncio
+import logging
+from core.concurrency import DB_SEMAPHORE_LOCAL, DB_SEMAPHORE_REMOTE, DB_QUERY_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 class DualIMXRepository(IMXRepository):
     def __init__(self, session_local_factory, session_remote_factory):
         self.local_factory = session_local_factory
         self.remote_factory = session_remote_factory
+    
+    def _get_semaphore(self, online: bool):
+        """Retorna el semáforo apropiado según el tipo de BD."""
+        return DB_SEMAPHORE_REMOTE if online else DB_SEMAPHORE_LOCAL
 
     async def save(self, sensor_data: SensorIMX477, online: bool):
         data_dict = sensor_data.dict()
@@ -125,84 +134,159 @@ class DualIMXRepository(IMXRepository):
 
     async def exists_by_project(self, project_id: int, online: bool) -> bool:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            stmt = select(func.count()).select_from(SensorIMX477Model).where(
-                SensorIMX477Model.id_project == project_id
-            )
-            result = await session.execute(stmt)
-            count = result.scalar()
-            return count >= 4
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = select(func.count()).select_from(SensorIMX477Model).where(
+                            SensorIMX477Model.id_project == project_id
+                        )
+                        result = await session.execute(stmt)
+                        count = result.scalar()
+                        return count >= 4
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en exists_by_project IMX477 proyecto {project_id}")
+            if online:
+                return await self.exists_by_project(project_id, online=False)
+            return False
+        except Exception as e:
+            logger.error(f"Error en exists_by_project IMX477: {e}")
+            if online:
+                return await self.exists_by_project(project_id, online=False)
+            return False
 
     async def get_by_project_id(self, project_id: int, online: bool) -> List[SensorIMX477]:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            stmt = (
-                select(SensorIMX477Model)
-                .where(SensorIMX477Model.id_project == project_id)
-                .order_by(SensorIMX477Model.timestamp.desc())
-                .limit(4)
-            )
-            result = await session.execute(stmt)
-            records = result.scalars().all()
-            return [SensorIMX477(**r.as_dict()) for r in records]
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = (
+                            select(SensorIMX477Model)
+                            .where(SensorIMX477Model.id_project == project_id)
+                            .order_by(SensorIMX477Model.timestamp.desc())
+                            .limit(4)
+                        )
+                        result = await session.execute(stmt)
+                        records = result.scalars().all()
+                        return [SensorIMX477(**r.as_dict()) for r in records]
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en get_by_project_id IMX477 proyecto {project_id}")
+            # Fallback a local si remoto falla
+            if online:
+                return await self.get_by_project_id(project_id, online=False)
+            return []
+        except Exception as e:
+            logger.error(f"Error en get_by_project_id IMX477: {e}")
+            if online:
+                return await self.get_by_project_id(project_id, online=False)
+            return []
 
     async def get_dual_measurement(self, project_id: int, online: bool) -> Optional[SensorIMX477]:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            try:
-                stmt = (
-                    select(SensorIMX477Model)
-                    .where(
-                        SensorIMX477Model.id_project == project_id,
-                        SensorIMX477Model.is_dual_measurement == True
-                    )
-                    .order_by(SensorIMX477Model.timestamp.desc())
-                    .limit(1)
-                )
-                result = await session.execute(stmt)
-                record = result.scalars().first()
-                return SensorIMX477(**record.as_dict()) if record else None
-            except Exception as e:
-                await session.rollback()
-                raise e
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = (
+                            select(SensorIMX477Model)
+                            .where(
+                                SensorIMX477Model.id_project == project_id,
+                                SensorIMX477Model.is_dual_measurement == True
+                            )
+                            .order_by(SensorIMX477Model.timestamp.desc())
+                            .limit(1)
+                        )
+                        result = await session.execute(stmt)
+                        record = result.scalars().first()
+                        return SensorIMX477(**record.as_dict()) if record else None
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en get_dual_measurement IMX477 proyecto {project_id}")
+            if online:
+                return await self.get_dual_measurement(project_id, online=False)
+            return None
+        except Exception as e:
+            logger.error(f"Error en get_dual_measurement IMX477: {e}")
+            if online:
+                return await self.get_dual_measurement(project_id, online=False)
+            return None
 
     async def exists_dual_measurement(self, project_id: int, online: bool) -> bool:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            try:
-                stmt = select(func.count()).select_from(SensorIMX477Model).where(
-                    SensorIMX477Model.id_project == project_id,
-                    SensorIMX477Model.is_dual_measurement == True
-                )
-                result = await session.execute(stmt)
-                count = result.scalar()
-                return count > 0
-            except Exception as e:
-                await session.rollback()
-                raise e
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = select(func.count()).select_from(SensorIMX477Model).where(
+                            SensorIMX477Model.id_project == project_id,
+                            SensorIMX477Model.is_dual_measurement == True
+                        )
+                        result = await session.execute(stmt)
+                        count = result.scalar()
+                        return count > 0
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en exists_dual_measurement IMX477 proyecto {project_id}")
+            if online:
+                return await self.exists_dual_measurement(project_id, online=False)
+            return False
+        except Exception as e:
+            logger.error(f"Error en exists_dual_measurement IMX477: {e}")
+            if online:
+                return await self.exists_dual_measurement(project_id, online=False)
+            return False
                 
     async def has_any_record(self, project_id: int, online: bool) -> bool:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            try:
-                stmt = select(func.count()).select_from(SensorIMX477Model).where(
-                    SensorIMX477Model.id_project == project_id
-                )
-                result = await session.execute(stmt)
-                count = result.scalar()
-                return count > 0
-            except Exception as e:
-                await session.rollback()
-                raise e
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = select(func.count()).select_from(SensorIMX477Model).where(
+                            SensorIMX477Model.id_project == project_id
+                        )
+                        result = await session.execute(stmt)
+                        count = result.scalar()
+                        return count > 0
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en has_any_record IMX477 proyecto {project_id}")
+            if online:
+                return await self.has_any_record(project_id, online=False)
+            return False
+        except Exception as e:
+            logger.error(f"Error en has_any_record IMX477: {e}")
+            if online:
+                return await self.has_any_record(project_id, online=False)
+            return False
                 
     async def get_by_id(self, record_id: int, online: bool) -> Optional[SensorIMX477]:
         factory = self.remote_factory if online else self.local_factory
-        async with factory() as session:
-            try:
-                stmt = select(SensorIMX477Model).where(SensorIMX477Model.id == record_id)
-                result = await session.execute(stmt)
-                record = result.scalars().first()
-                return SensorIMX477(**record.as_dict()) if record else None
-            except Exception as e:
-                await session.rollback()
-                raise e
+        semaphore = self._get_semaphore(online)
+        
+        try:
+            async with asyncio.timeout(DB_QUERY_TIMEOUT):
+                async with semaphore:
+                    async with factory() as session:
+                        stmt = select(SensorIMX477Model).where(SensorIMX477Model.id == record_id)
+                        result = await session.execute(stmt)
+                        record = result.scalars().first()
+                        return SensorIMX477(**record.as_dict()) if record else None
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout en get_by_id IMX477 id {record_id}")
+            if online:
+                return await self.get_by_id(record_id, online=False)
+            return None
+        except Exception as e:
+            logger.error(f"Error en get_by_id IMX477: {e}")
+            if online:
+                return await self.get_by_id(record_id, online=False)
+            return None

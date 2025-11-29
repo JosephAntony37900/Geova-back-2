@@ -1,8 +1,10 @@
 # IMX477/infraestructure/routes/routes_imx.py
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
 from IMX477.domain.entities.sensor_imx import SensorIMX477
 from IMX477.infraestructure.ws.ws_manager import WebSocketManager_IMX
+from core.concurrency import RATE_LIMITERS
+import asyncio
 
 router = APIRouter()
 router_ws_imx = APIRouter()
@@ -10,9 +12,21 @@ ws_manager_imx = WebSocketManager_IMX()
 
 @router.get("/imx477/sensor")
 async def get_sensor(request: Request, event: bool = False):
+    # Rate limiting para evitar saturación
+    if not await RATE_LIMITERS["imx477"].acquire():
+        raise HTTPException(status_code=429, detail="Demasiadas peticiones, intente más tarde")
+    
     controller = request.app.state.imx_controller
-    data = await controller.get_imx_data(event=event)
-    return data.dict() if data else {"error": "No data"}
+    try:
+        data = await asyncio.wait_for(
+            controller.get_imx_data(event=event),
+            timeout=5.0
+        )
+        return data.dict() if data else {"error": "No data"}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout obteniendo datos del sensor")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/imx477/sensor")
 async def post_sensor(request: Request, payload: SensorIMX477):
@@ -62,11 +76,23 @@ async def delete_sensor_by_id(request: Request, record_id: int):
 
 @router.get("/imx477/sensor/{project_id}")
 async def get_sensor_by_project_id(request: Request, project_id: int):
+    # Rate limiting para evitar saturación
+    if not await RATE_LIMITERS["imx477"].acquire():
+        raise HTTPException(status_code=429, detail="Demasiadas peticiones, intente más tarde")
+    
     controller = request.app.state.imx_controller
-    data = await controller.get_by_project_id(project_id)
-    if data:
-        return data
-    return JSONResponse(content={"error": "No se encontró datos de la cámara para ese proyecto"}, status_code=404)
+    try:
+        data = await asyncio.wait_for(
+            controller.get_by_project_id(project_id),
+            timeout=5.0
+        )
+        if data:
+            return data
+        return JSONResponse(content={"error": "No se encontró datos de la cámara para ese proyecto"}, status_code=404)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout consultando base de datos")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router_ws_imx.websocket("/imx477/sensor/ws")
 async def imx_ws(websocket: WebSocket):
