@@ -319,6 +319,93 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# ============================================
+# MANEJADORES DE ERRORES GLOBALES
+# ============================================
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    """
+    Manejador para errores de validación de Pydantic.
+    Devuelve mensajes de error claros y específicos.
+    """
+    errors = []
+    for error in exc.errors():
+        field = " -> ".join(str(loc) for loc in error["loc"])
+        message = error["msg"]
+        errors.append({
+            "campo": field,
+            "mensaje": message,
+            "tipo_error": error["type"]
+        })
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "error": "Error de validación en los datos enviados",
+            "detalles": errors,
+            "codigo": 422
+        }
+    )
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc: StarletteHTTPException):
+    """
+    Manejador para excepciones HTTP (404, 500, etc.).
+    Devuelve mensajes descriptivos.
+    """
+    mensajes = {
+        400: "Solicitud incorrecta",
+        401: "No autorizado",
+        403: "Acceso prohibido",
+        404: "Recurso no encontrado",
+        405: "Método no permitido",
+        408: "Tiempo de espera agotado",
+        429: "Demasiadas solicitudes",
+        500: "Error interno del servidor",
+        502: "Error de puerta de enlace",
+        503: "Servicio no disponible",
+        504: "Tiempo de espera de la puerta de enlace agotado"
+    }
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": exc.detail if exc.detail else mensajes.get(exc.status_code, "Error desconocido"),
+            "codigo": exc.status_code,
+            "mensaje_general": mensajes.get(exc.status_code, "Error desconocido")
+        }
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc: Exception):
+    """
+    Manejador para cualquier excepción no capturada.
+    """
+    import traceback
+    print(f"Error no manejado: {exc}")
+    traceback.print_exc()
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": str(exc),
+            "codigo": 500,
+            "mensaje_general": "Error interno del servidor. Contacte al administrador si el problema persiste."
+        }
+    )
+
+# ============================================
+# MIDDLEWARE CORS
+# ============================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
