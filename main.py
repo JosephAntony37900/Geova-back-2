@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import uvicorn, asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine
 import aiohttp
+from concurrent.futures import ThreadPoolExecutor
 
 from core.config import get_local_engine, get_remote_engine, get_rabbitmq_config
 from core.concurrency import connectivity_cache, cleanup as cleanup_concurrency
@@ -97,8 +98,12 @@ async def lifespan(app: FastAPI):
     _cached_internet_status = False
     _last_connectivity_check = 0
     
+    # Flag para habilitar/deshabilitar tareas de sensores
+    ENABLE_SENSOR_TASKS = True  # Cambiar a False para deshabilitar tareas de background
+    SENSOR_TASK_INTERVAL = 5    # Segundos entre lecturas de sensores
+    
     async def check_connectivity_periodically():
-        """Tarea dedicada para verificar conectividad cada 10 segundos."""
+        """Tarea dedicada para verificar conectividad cada 30 segundos."""
         nonlocal _cached_internet_status, _last_connectivity_check
         import time
         while True:
@@ -108,158 +113,137 @@ async def lifespan(app: FastAPI):
                 print(f"🌐 Conectividad: {'✅ Online' if _cached_internet_status else '❌ Offline'}")
             except Exception:
                 _cached_internet_status = False
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)  # Reducido a cada 30 segundos
     
     def get_cached_connectivity():
         """Obtener estado de conectividad sin bloquear."""
         return _cached_internet_status
 
     async def tf_task():
+        """Tarea de lectura TF-Luna con prioridad baja."""
+        await asyncio.sleep(2)  # Delay inicial para no saturar al inicio
         while True:
             try:
-                async with asyncio.timeout(3):
+                # Ceder el event loop ANTES de la operación
+                await asyncio.sleep(0)
+                
+                async with asyncio.timeout(2):
                     controller = app.state.tf_controller
                     data = await controller.get_tf_data(event=False)
-                    print("📡 TF-Luna:", data.dict() if data else "Sin datos")
-                    # Usar caché de conectividad (no bloquea)
-                    if not get_cached_connectivity() and data:
-                        await ws_manager.send_data(data.dict())
+                    if data:
+                        print("📡 TF-Luna:", data.dict())
+                        if not get_cached_connectivity():
+                            await ws_manager.send_data(data.dict())
             except asyncio.TimeoutError:
-                print("📡 TF-Luna: Timeout en lectura")
+                pass  # Silenciar timeouts
             except Exception:
                 pass
-            await asyncio.sleep(3)
+            await asyncio.sleep(SENSOR_TASK_INTERVAL)
 
     async def imx_task():
+        """Tarea de lectura IMX477 con prioridad baja."""
         from IMX477.infraestructure.streaming.streamer import get_streamer
         streamer = get_streamer()
+        await asyncio.sleep(3)  # Delay inicial
         
         while True:
             try:
-                async with asyncio.timeout(5):
+                await asyncio.sleep(0)  # Ceder event loop
+                
+                async with asyncio.timeout(3):
                     if streamer.is_streaming:
                         frame = streamer.get_current_frame()
                         if frame is not None:
                             controller = app.state.imx_controller
                             data = await controller.get_imx_data(event=False)
-                            if data:
-                                print("📷 IMX477 (desde streaming):", data.dict())
-                                if not get_cached_connectivity():
-                                    await ws_manager_imx.send_data(data.dict())
-                        else:
-                            print("📷 IMX477: Streaming activo, esperando frames...")
-                        await asyncio.sleep(5)
+                            if data and not get_cached_connectivity():
+                                await ws_manager_imx.send_data(data.dict())
                     else:
                         controller = app.state.imx_controller
                         data = await controller.get_imx_data(event=False)
-                        print("📷 IMX477:", data.dict() if data else "Sin datos")
-                        if not get_cached_connectivity() and data:
+                        if data and not get_cached_connectivity():
                             await ws_manager_imx.send_data(data.dict())
-                        await asyncio.sleep(5)
-            except asyncio.TimeoutError:
-                print("📷 IMX477: Timeout en lectura")
-                await asyncio.sleep(5)
-            except Exception:
-                await asyncio.sleep(5)
+            except (asyncio.TimeoutError, Exception):
+                pass
+            await asyncio.sleep(SENSOR_TASK_INTERVAL + 2)  # Más lento que otros
 
     async def mpu_task():
+        """Tarea de lectura MPU6050 con prioridad baja."""
+        await asyncio.sleep(4)  # Delay inicial
         while True:
             try:
-                async with asyncio.timeout(3):
+                await asyncio.sleep(0)  # Ceder event loop
+                
+                async with asyncio.timeout(2):
                     controller = app.state.mpu_controller
                     data = await controller.get_mpu_data(event=False)
-                    print("🌀 MPU6050:", data.dict() if data else "Sin datos")
-                    if not get_cached_connectivity() and data:
+                    if data and not get_cached_connectivity():
                         await ws_manager_mpu.send_data(data.dict())
-            except asyncio.TimeoutError:
-                print("🌀 MPU6050: Timeout en lectura")
-            except Exception:
+            except (asyncio.TimeoutError, Exception):
                 pass
-            await asyncio.sleep(3)
+            await asyncio.sleep(SENSOR_TASK_INTERVAL)
 
     async def hc_task():
+        """Tarea de lectura HC-SR04 BLE con prioridad baja."""
+        await asyncio.sleep(5)  # Delay inicial más largo para BLE
+        
         controller = app.state.hc_controller
         reader = controller.usecase.reader
         connection_attempts = 0
-        max_connection_attempts = 5
+        max_connection_attempts = 3
         
         print("🔵 HC-SR04: Iniciando tarea de lectura BLE...")
         
+        # Intentar conexión inicial
         while connection_attempts < max_connection_attempts:
-                print(f"🔵 HC-SR04: Intento de conexión {connection_attempts + 1}/{max_connection_attempts}")
-                if await reader.connect():
+            await asyncio.sleep(0)  # Ceder event loop
+            print(f"🔵 HC-SR04: Intento de conexión {connection_attempts + 1}/{max_connection_attempts}")
+            try:
+                async with asyncio.timeout(5):
+                    if await reader.connect():
                         print("HC-SR04: Conexión inicial establecida")
                         break
-                else:
-                        connection_attempts += 1
-                        if connection_attempts < max_connection_attempts:
-                                print(f"HC-SR04: Fallo de conexión, esperando 5s...")
-                                await asyncio.sleep(5)
+            except asyncio.TimeoutError:
+                print("HC-SR04: Timeout en conexión")
+            connection_attempts += 1
+            if connection_attempts < max_connection_attempts:
+                await asyncio.sleep(10)
         
         if connection_attempts >= max_connection_attempts:
-                print("HC-SR04: No se pudo establecer conexión inicial, reintentando cada 30s...")
+            print("HC-SR04: No se pudo establecer conexión inicial")
         
+        # Loop principal con prioridad baja
         while True:
-                try:
-                        internet_available = get_cached_connectivity()
-                        
-                        if not reader.is_connected:
-                                print("🔵 HC-SR04: Sin conexión, intentando reconectar...")
-                                if await reader.connect():
-                                        print("✅ HC-SR04: Reconectado exitosamente")
-                                else:
-                                        print("HC-SR04: Fallo de reconexión, esperando 10s...")
-                                        await asyncio.sleep(10)
-                                        continue
-                        
-                        if reader.client and not reader.client.is_connected:
-                                print("🔵 HC-SR04: Cliente desconectado, limpiando estado...")
-                                reader.is_connected = False
-                                await reader.disconnect()
-                                continue
-                        
-                        if reader.is_connected:
-                                data = await controller.get_hc_data(project_id=1, event=False)
-
-                                if data:
-                                        print(f"🔵 HC-SR04 BLE: {data.distancia_cm} cm")
-                                        
-                                        if not internet_available:
-                                                await ws_manager_hc.send_data(data.dict())
-                                else:
-                                        print("🔵 HC-SR04: Sin datos del ESP32 (posiblemente apagado)")
-                                        
-                                        if reader.client and not reader.client.is_connected:
-                                                print("🔵 HC-SR04: Conexión BLE perdida, desconectando...")
-                                                reader.is_connected = False
-                                                await reader.disconnect()
+            try:
+                await asyncio.sleep(0)  # Ceder event loop PRIMERO
+                
+                if not reader.is_connected:
+                    await asyncio.sleep(15)  # Esperar más si no hay conexión
+                    try:
+                        async with asyncio.timeout(5):
+                            await reader.connect()
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
+                
+                async with asyncio.timeout(2):
+                    data = await controller.get_hc_data(project_id=1, event=False)
+                    if data and not get_cached_connectivity():
+                        await ws_manager_hc.send_data(data.dict())
                                                                                 
-                except asyncio.CancelledError:
-                        print("HC-SR04: Tarea cancelada")
-                        break
-                except KeyboardInterrupt:
-                        print("HC-SR04: Interrupción por teclado")
-                        break
-                except Exception as e:
-                        import traceback
-                        print("Error en HC-SR04:")
-                        print(f"Error: {e}")
-                        traceback.print_exc()
-                        
-                        try:
-                                if reader.is_connected:
-                                        await reader.disconnect()
-                        except:
-                                pass
+            except asyncio.CancelledError:
+                break
+            except (asyncio.TimeoutError, Exception):
+                pass
                                                 
-                await asyncio.sleep(2)
+            await asyncio.sleep(SENSOR_TASK_INTERVAL + 1)
         
         try:
-                if reader.is_connected:
-                        await reader.disconnect()
-                        print("🔵 HC-SR04: Desconectado al finalizar tarea")
+            if reader.is_connected:
+                await reader.disconnect()
+                print("🔵 HC-SR04: Desconectado al finalizar tarea")
         except:
-                pass
+            pass
 
     async def sync_tf():
         print("Iniciando sincronización TF-Luna...")
@@ -308,17 +292,21 @@ async def lifespan(app: FastAPI):
     print("Creando tarea de verificación de conectividad...")
     asyncio.create_task(check_connectivity_periodically())
     
-    print("Creando tareas de sensores...")
-    asyncio.create_task(tf_task())
-    asyncio.create_task(imx_task())
-    asyncio.create_task(mpu_task())
-    asyncio.create_task(hc_task())
-
-    print("Creando tareas de sincronización...")
-    asyncio.create_task(sync_tf())
-    asyncio.create_task(sync_imx())
-    asyncio.create_task(sync_mpu())
-    asyncio.create_task(sync_hc())
+    if ENABLE_SENSOR_TASKS:
+        print("Creando tareas de sensores (HABILITADAS)...")
+        asyncio.create_task(tf_task())
+        asyncio.create_task(imx_task())
+        asyncio.create_task(mpu_task())
+        asyncio.create_task(hc_task())
+        
+        print("Creando tareas de sincronización...")
+        asyncio.create_task(sync_tf())
+        asyncio.create_task(sync_imx())
+        asyncio.create_task(sync_mpu())
+        asyncio.create_task(sync_hc())
+    else:
+        print("⚠️ Tareas de sensores DESHABILITADAS (ENABLE_SENSOR_TASKS=False)")
+    
     print("📷 Streaming de IMX477 listo para usar")
     yield
     print("Cerrando aplicación...")
@@ -369,7 +357,8 @@ app.include_router(mpu_router, tags=["MPU6050"])
 app.include_router(hc_router, tags=["HC-SR04"])
 
 @app.get("/")
-async def root():
+def root():
+    """Endpoint raíz SÍNCRONO."""
     return {
         "message": "Raspberry Pi Sensor API",
         "status": "running",
@@ -385,7 +374,8 @@ async def root():
                 "status": "/imx477/streaming/status"
             },
             "mpu6050": "/mpu6050/",
-            "health": "/health"
+            "health": "/health",
+            "ping": "/ping"
         }
     }
 

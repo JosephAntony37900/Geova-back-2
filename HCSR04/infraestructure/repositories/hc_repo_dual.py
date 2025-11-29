@@ -28,21 +28,57 @@ class DualHCSensorRepository(HCSensorRepository):
             "tiempo_vuelo_us": sensor_data.tiempo_vuelo_us,
             "event": sensor_data.event,
             "timestamp": sensor_data.timestamp,
-            "synced": online
+            "synced": False  # Siempre false hasta confirmar remoto
         }
         
+        # Siempre guardar localmente primero
+        local_model = None
         async with self.local_factory() as session_local:
-            local_model = SensorHCModel(**data_dict)
-            session_local.add(local_model)
-            await session_local.commit()
+            try:
+                local_model = SensorHCModel(**data_dict)
+                session_local.add(local_model)
+                await session_local.commit()
+                try:
+                    await session_local.refresh(local_model)
+                except Exception:
+                    pass
+            except Exception as e:
+                await session_local.rollback()
+                raise e
 
         if online:
-            async with self.remote_factory() as session_remote:
-                remote_data = data_dict.copy()
-                remote_data["synced"] = True
-                remote_model = SensorHCModel(**remote_data)
-                session_remote.add(remote_model)
-                await session_remote.commit()
+            # Intentar guardar en la base remota con reintentos y backoff.
+            attempts = 3
+            for attempt in range(attempts):
+                try:
+                    async with self.remote_factory() as session_remote:
+                        remote_data = data_dict.copy()
+                        remote_data["synced"] = True
+                        remote_model = SensorHCModel(**remote_data)
+                        session_remote.add(remote_model)
+                        await session_remote.commit()
+
+                        # Si el remoto tuvo éxito, actualizar el registro local
+                        if local_model and local_model.id:
+                            try:
+                                async with self.local_factory() as session_local_upd:
+                                    stmt = (update(SensorHCModel)
+                                            .where(SensorHCModel.id == local_model.id)
+                                            .values(synced=True))
+                                    await session_local_upd.execute(stmt)
+                                    await session_local_upd.commit()
+                            except Exception:
+                                logger.exception("HC-SR04: No se pudo marcar el registro local como synced")
+                        break
+                except Exception as e:
+                    logger.warning("HC-SR04: Intento %s fallo al guardar en remoto: %s", attempt + 1, e)
+                    if attempt < attempts - 1:
+                        await asyncio.sleep(0.5 * (2 ** attempt))
+                        continue
+                    else:
+                        # No forzamos un error en la API: dejamos el registro local como no sincronizado
+                        logger.error("HC-SR04: No se pudo guardar en la DB remota tras %s intentos: %s", attempts, e)
+                        return
 
     async def update_all_by_project(self, project_id: int, sensor_data: HCSensorData, online: bool):
         await self.delete_all_by_project(project_id, online)

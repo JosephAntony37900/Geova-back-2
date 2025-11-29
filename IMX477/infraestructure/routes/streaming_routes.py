@@ -8,6 +8,17 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/imx477/streaming")
 
+
+@router.get("/ping")
+@router.head("/ping")
+def streaming_ping():
+    """
+    Ping SÍNCRONO ultra-ligero para verificar que el servicio de streaming existe.
+    NO verifica estado del streaming, solo que la API responde.
+    """
+    return {"pong": True}
+
+
 @router.post("/start")
 async def start_streaming():
     """Inicia el streaming de video."""
@@ -73,8 +84,12 @@ async def stop_streaming():
         )
 
 @router.get("/status")
-async def get_streaming_status():
-    """Obtiene el estado actual del streaming."""
+@router.head("/status")
+def get_streaming_status():
+    """
+    Obtiene el estado actual del streaming - SÍNCRONO para respuesta inmediata.
+    get_status() es una operación síncrona que no bloquea.
+    """
     try:
         streamer = get_streamer()
         status = streamer.get_status()
@@ -123,8 +138,9 @@ def video_feed():
         )
 
 @router.get("/health")
-async def streaming_health():
-    """Health check específico para streaming."""
+@router.head("/health")
+def streaming_health():
+    """Health check SÍNCRONO específico para streaming."""
     try:
         streamer = get_streamer()
         status = streamer.get_status()
@@ -135,7 +151,7 @@ async def streaming_health():
                 "status": "healthy",
                 "streaming_active": status["active"],
                 "fps": status["fps"],
-                "camera_available": True  # TODO: Implementar verificación real de cámara
+                "camera_available": True
             }
         )
     except Exception as e:
