@@ -121,16 +121,32 @@ class HCUseCase:
 
     async def get_by_project_id(self, project_id: int) -> List[HCSensorData]:
         try:
+            # Primero intentar local (siempre rápido)
+            local_data = await self.repository.get_all_by_project_id(project_id, online=False)
+            if local_data:
+                return local_data
+            
+            # Si no hay datos locales, intentar remoto
             online = await self.is_connected()
-            return await self.repository.get_all_by_project_id(project_id, online)
+            if online:
+                return await self.repository.get_all_by_project_id(project_id, online=True)
+            return local_data
         except Exception as e:
             print(f"🔴 HC-SR04: Error al obtener datos por proyecto - {e}")
             return []
 
     async def get_latest_by_project_id(self, project_id: int) -> HCSensorData | None:
         try:
+            # Primero intentar local (siempre rápido)
+            local_data = await self.repository.get_latest_by_project_id(project_id, online=False)
+            if local_data:
+                return local_data
+            
+            # Si no hay datos locales, intentar remoto
             online = await self.is_connected()
-            return await self.repository.get_latest_by_project_id(project_id, online)
+            if online:
+                return await self.repository.get_latest_by_project_id(project_id, online=True)
+            return local_data
         except Exception as e:
             print(f"🔴 HC-SR04: Error al obtener último dato - {e}")
             return None
