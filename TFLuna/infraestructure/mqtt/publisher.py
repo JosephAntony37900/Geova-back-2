@@ -1,31 +1,28 @@
 # TFLuna/infraestructure/mqtt/publisher.py
 from TFLuna.domain.ports.mqtt_publisher import MQTTPublisher
 from TFLuna.domain.entities.sensor_tf import SensorTFLuna as SensorTF
-import pika, json
-from pika.exceptions import AMQPConnectionError
+from core.rabbitmq_pool import get_rabbitmq_pool
+
 
 class RabbitMQPublisher(MQTTPublisher):
+    """
+    Publisher de RabbitMQ que usa el pool de conexiones compartido.
+    No bloqueante - encola mensajes para publicación async.
+    """
     def __init__(self, host: str, user: str, password: str, routing_key: str):
         self.host = host
         self.user = user
         self.password = password
         self.routing_key = routing_key
+        # El pool se inicializa en main.py al arrancar la app
 
     def publish(self, sensor: SensorTF):
+        """Publica usando el pool compartido (no bloqueante)."""
         try:
-            credentials = pika.PlainCredentials(self.user, self.password)
-            conn = pika.BlockingConnection(pika.ConnectionParameters(self.host, credentials=credentials))
-            ch = conn.channel()
-
-            # Asegurar exchange y publicar
-            ch.exchange_declare(exchange="amq.topic", exchange_type="topic", durable=True)
-            message = json.dumps(sensor.dict(), default=str)
-            ch.basic_publish(exchange="amq.topic", routing_key=self.routing_key, body=message)
-
-            print(f"[MQTT-TF] Mensaje enviado: {message}")
-            conn.close()
-
-        except AMQPConnectionError:
-            print("[MQTT-TF] No hay conexión a RabbitMQ. Solo local.")
+            pool = get_rabbitmq_pool(self.host, self.user, self.password)
+            pool.publish(
+                routing_key=self.routing_key,
+                body=sensor.dict()
+            )
         except Exception as e:
-            print(f"MQTT-TF] Error inesperado al publicar: {e}")
+            print(f"[MQTT-TF] Error al encolar mensaje: {e}")
