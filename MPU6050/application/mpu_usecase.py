@@ -176,5 +176,18 @@ class MPUUseCase:
         return {"msg": f"Registro MPU ID {record_id} eliminado correctamente", "success": True}
 
     async def get_by_project_id(self, project_id: int) -> SensorMPU | None:
-        online = await self.is_connected()
-        return await self.repository.get_by_project_id(project_id, online)
+        # Primero intentar local (siempre rápido), luego remoto si hay conexión
+        try:
+            # Intentar local primero - siempre disponible y rápido
+            local_data = await self.repository.get_by_project_id(project_id, online=False)
+            if local_data:
+                return local_data
+            
+            # Si no hay datos locales, intentar remoto
+            online = await self.is_connected()
+            if online:
+                return await self.repository.get_by_project_id(project_id, online=True)
+            return local_data
+        except Exception as e:
+            print(f"Error en get_by_project_id MPU: {e}")
+            return None
