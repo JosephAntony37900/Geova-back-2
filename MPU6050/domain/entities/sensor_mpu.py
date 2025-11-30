@@ -1,6 +1,6 @@
 # MPU6050/domain/entities/sensor_mpu.py
 from datetime import datetime
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional
 
 class SensorMPU(BaseModel):
@@ -63,3 +63,18 @@ class SensorMPU(BaseModel):
         if v < 1 or v > 2:
             raise ValueError('El measurement_count debe ser 1 o 2')
         return v
+
+    @model_validator(mode='after')
+    def validate_inclinacion(self):
+        """
+        Valida que la inclinación (roll + pitch) esté dentro del rango permitido.
+        Solo se aplica cuando event=True (al guardar medición).
+        """
+        if self.event:
+            inclinacion = self.roll + self.pitch
+            if inclinacion > 15 or inclinacion < -15:
+                raise ValueError(
+                    f'La inclinación ({inclinacion:.2f}°) está fuera del rango permitido. '
+                    f'Debe estar entre -15° y 15° para guardar la medición.'
+                )
+        return self
