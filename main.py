@@ -6,9 +6,11 @@ import uvicorn, asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
-
-from core.config import get_local_engine, get_remote_engine, get_rabbitmq_config
 from core.concurrency import connectivity_cache, cleanup as cleanup_concurrency
+from core.config import get_local_engine, get_remote_engine, get_rabbitmq_config
+from core.cors import setup_cors
+from core.connectivity import is_connected  # Nueva versión async con caché
+from core.rabbitmq_pool import init_rabbitmq_pool, stop_rabbitmq_pool  # Pool de conexiones
 from TFLuna.infraestructure.sync.sync_service import sync_tf_pending_data
 from IMX477.infraestructure.sync.sync_service import sync_imx_pending_data
 from MPU6050.infraestructure.sync.sync_service import sync_mpu_pending_data
@@ -59,9 +61,17 @@ async def is_connected() -> bool:
     El caché tiene TTL de 5 segundos para reducir latencia en peticiones concurrentes.
     """
     return await connectivity_cache.get_or_check(_check_connectivity)
-
+  
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Inicializar pool de conexiones RabbitMQ (una sola conexión para todos)
+    print("🐰 Inicializando pool de RabbitMQ...")
+    init_rabbitmq_pool(
+        host=rabbitmq_config["host"],
+        user=rabbitmq_config["user"],
+        password=rabbitmq_config["pass"]  # La config usa "pass" no "password"
+    )
+    
     init_tf_dependencies(app, local_session, remote_session, rabbitmq_config)
     init_imx_dependencies(app, local_session, remote_session, rabbitmq_config, is_connected)
     init_mpu_dependencies(app, local_session, remote_session, rabbitmq_config, is_connected)
@@ -311,6 +321,8 @@ async def lifespan(app: FastAPI):
     yield
     print("Cerrando aplicación...")
     cleanup_concurrency()
+    print("🐰 Cerrando pool de RabbitMQ...")
+    stop_rabbitmq_pool()
 
 app = FastAPI(
     title="Raspberry Pi Sensor API",
@@ -401,10 +413,6 @@ async def general_exception_handler(request, exc: Exception):
             "mensaje_general": "Error interno del servidor. Contacte al administrador si el problema persiste."
         }
     )
-
-# ============================================
-# MIDDLEWARE CORS
-# ============================================
 
 app.add_middleware(
     CORSMiddleware,
