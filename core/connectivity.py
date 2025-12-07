@@ -29,20 +29,28 @@ class ConnectivityManager:
         self._initialized = True
         self._is_connected: bool = False
         self._last_check: float = 0
-        self._cache_duration: float = 5.0  # Cachear resultado por 5 segundos
+        self._cache_duration: float = 15.0  # Cachear resultado por 15 segundos
         self._lock = asyncio.Lock()
         self._checking = False
     
-    def _check_sync(self, host: str = "8.8.8.8", port: int = 53, timeout: float = 2) -> bool:
+    def _check_sync(self, host: str = "8.8.8.8", port: int = 53, timeout: float = 3) -> bool:
         """Verificación sincrónica de conectividad."""
         try:
-            socket.setdefaulttimeout(timeout)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
             sock.connect((host, port))
             sock.close()
             return True
         except Exception:
-            return False
+            # Intentar con servidor alternativo si falla
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect(("1.1.1.1", 53))  # Cloudflare DNS como backup
+                sock.close()
+                return True
+            except Exception:
+                return False
     
     async def is_connected(self) -> bool:
         """

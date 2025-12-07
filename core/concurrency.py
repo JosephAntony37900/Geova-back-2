@@ -31,7 +31,7 @@ SHARED_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="Geova")
 
 # Timeouts (segundos)
 DB_QUERY_TIMEOUT = 5.0  # Reducido de 10s a 5s para evitar bloqueos largos
-CONNECTIVITY_TIMEOUT = 2.0  # Reducido de 3s a 2s
+CONNECTIVITY_TIMEOUT = 10.0  # Aumentado para evitar falsos offline
 
 # ============================================================================
 # CACHÉ DE CONECTIVIDAD
@@ -85,7 +85,7 @@ class ConnectivityCache:
                 return False
 
 # Instancia global del caché de conectividad
-connectivity_cache = ConnectivityCache(ttl_seconds=5.0)
+connectivity_cache = ConnectivityCache(ttl_seconds=15.0)
 
 # ============================================================================
 # DECORADORES PARA CONCURRENCIA

@@ -99,7 +99,7 @@ class WebSocketManager:
             self.disconnect(conn)
 
     async def _check_internet(self):
-        return await asyncio.to_thread(is_connected)
+        return await is_connected()
 
     def _start_connection_monitoring(self):
         if not self._connection_check_task or self._connection_check_task.done():

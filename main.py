@@ -47,13 +47,29 @@ remote_session = get_remote_engine()
 rabbitmq_config = get_rabbitmq_config()
 
 async def _check_connectivity() -> bool:
-    """Función interna para verificar conectividad (usada por el caché)."""
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("http://example.com", timeout=aiohttp.ClientTimeout(total=3)) as response:
-                return response.status == 200
-    except Exception:
-        return False
+    """Función interna para verificar conectividad via socket (más rápido que HTTP)."""
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def check_socket():
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect(("8.8.8.8", 53))  # DNS Google
+            sock.close()
+            return True
+        except Exception:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                sock.connect(("1.1.1.1", 53))  # Cloudflare backup
+                sock.close()
+                return True
+            except Exception:
+                return False
+    
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, check_socket)
 
 async def is_connected() -> bool:
     """

@@ -22,56 +22,20 @@ class DualIMXRepository(IMXRepository):
         return DB_SEMAPHORE_REMOTE if online else DB_SEMAPHORE_LOCAL
 
     async def save(self, sensor_data: SensorIMX477, online: bool):
+        """Guarda localmente (rápido). La sincronización remota la hace sync_service en background."""
         data_dict = sensor_data.dict()
         data_dict.pop('id', None)
         
-        # Siempre guardar localmente primero. Marcar como no sincronizado
-        # hasta que el guardado remoto confirme la persistencia.
-        local_model = None
+        # Solo guardar localmente - el sync_service se encarga del remoto
         async with self.local_factory() as session_local:
             try:
                 local_model = SensorIMX477Model(**data_dict, synced=False)
                 session_local.add(local_model)
                 await session_local.commit()
-                try:
-                    await session_local.refresh(local_model)
-                except Exception:
-                    pass
+                logger.debug("IMX477: Guardado local exitoso, pendiente de sync")
             except Exception as e:
                 await session_local.rollback()
                 raise e
-
-        if online:
-            # Intentar guardar en la base remota con reintentos y backoff.
-            attempts = 3
-            for attempt in range(attempts):
-                try:
-                    async with self.remote_factory() as session_remote:
-                        remote_model = SensorIMX477Model(**data_dict, synced=True)
-                        session_remote.add(remote_model)
-                        await session_remote.commit()
-
-                        # Si el remoto tuvo éxito, actualizar el registro local
-                        if local_model and local_model.id:
-                            try:
-                                async with self.local_factory() as session_local_upd:
-                                    stmt = (update(SensorIMX477Model)
-                                            .where(SensorIMX477Model.id == local_model.id)
-                                            .values(synced=True))
-                                    await session_local_upd.execute(stmt)
-                                    await session_local_upd.commit()
-                            except Exception:
-                                logger.exception("IMX477: No se pudo marcar el registro local como synced")
-                        break
-                except Exception as e:
-                    logger.warning("IMX477: Intento %s fallo al guardar en remoto: %s", attempt + 1, e)
-                    if attempt < attempts - 1:
-                        await asyncio.sleep(0.5 * (2 ** attempt))
-                        continue
-                    else:
-                        # No forzamos un error en la API: dejamos el registro local como no sincronizado
-                        logger.error("IMX477: No se pudo guardar en la DB remota tras %s intentos: %s", attempts, e)
-                        return
 
     async def update(self, sensor_data: SensorIMX477, online: bool):
         if sensor_data.id is None:
